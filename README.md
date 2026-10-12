@@ -262,3 +262,50 @@ npm run dev                                    # http://localhost:5173
 | [12-decisions](docs/12-decisions.md) | 주요 결정과 근거 |
 | [13-security-review](docs/13-security-review.md) | 보안 점검·침투 테스트 |
 | [backend/README](backend/README.md) · [frontend/README](frontend/README.md) · [frontend/TESTING](frontend/TESTING.md) | 각 영역 상세·테스트 기록 |
+
+## 응답 코드
+
+서버가 처리한 응답은 성공·실패 모두 **HTTP 200**이고, 결과는 본문의 `code`로 판단한다.
+
+```json
+// 성공
+{ "code": 200, "data": { ... } }
+// 실패
+{ "code": 504, "data": { "message": "현재 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요." } }
+```
+
+| code | 구분 | 발생 상황 | data.message |
+|------|------|-----------|--------------|
+| 200 | – | 조회·처리 성공 | – |
+| 201 | – | 회원가입 성공 | – |
+| 401 | INVALID_CREDENTIALS | 로그인 API에서 이메일/비밀번호 불일치 | 이메일 또는 비밀번호가 올바르지 않습니다. |
+| 401 | UNAUTHORIZED | access token 없음·만료·위조, refresh token 무효 | 로그인이 필요합니다. |
+| 403 | FORBIDDEN | 일반 사용자가 관리자 API 호출 | 관리자만 접근할 수 있습니다. |
+| 404 | NOT_FOUND | 없는 경로, 관리자 조회 대상(사용자·request_id) 없음 | 요청한 정보를 찾을 수 없습니다. |
+| 405 | METHOD_NOT_ALLOWED | 허용되지 않은 메서드 (예: `/api/chat`을 GET으로) | 허용되지 않은 요청 방식입니다. |
+| 409 | EMAIL_ALREADY_EXISTS | 회원가입 이메일 중복 | 이미 가입된 이메일입니다. |
+| 413 | PAYLOAD_TOO_LARGE | 요청 본문 64KB 초과 (모든 API) | 요청 내용이 너무 큽니다. |
+| 422 | VALIDATION_ERROR | 입력값 검증 실패 (빈 입력, 길이 초과, 이메일 형식 등) | 질문은 1~1000자로 입력해 주세요. |
+| 429 | TOO_MANY_REQUESTS | 챗 사용자별 1분 10회 / 로그인 실패 이메일별 10분 5회·IP별 10분 20회 / 가입 IP별 10분 20회 초과 | 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요. |
+| 500 | INTERNAL_ERROR | 처리하지 못한 서버 내부 오류 | 서버 내부 오류가 발생했습니다. |
+| 502 | AI_CALL_FAILED | AI API 호출 실패 | AI 응답을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요. |
+| 504 | AI_TIMEOUT | AI API 타임아웃 (`AI_TIMEOUT_SECONDS` 초과) | 현재 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요. |
+
+"구분"은 문서·로그용 이름이며 응답 본문에는 포함되지 않는다.
+
+### AI 실패 원인 (서버 로그 `reason`)
+
+사용자에게는 502/504 두 가지로만 보이고, 원인은 서버 로그의 `reason`으로 구분한다.
+
+| reason | 응답 code | 원인 |
+|--------|-----------|------|
+| timeout | 504 | 상한 시간 안에 AI 응답 없음 |
+| missing_api_key | 502 | `COPA_API_KEY` 미설정 (AI 호출 자체를 안 함) |
+| auth_failed | 502 | AI 서버가 401/403 반환 (키 오류·권한 없음) |
+| rate_limited | 502 | AI 서버가 429 반환 (호출 제한) |
+| http_{상태코드} | 502 | 그 밖의 AI 서버 오류 응답 (예: http_500) |
+| connect_error:{예외명} | 502 | 연결 거부·DNS 실패 등 응답 자체를 못 받음 |
+| invalid_response | 502 | 응답 형식이 `choices[0].message.content`가 아님 |
+| empty_response | 502 | 응답 내용이 비어 있음 |
+
+실패도 `chat_logs`에 `status=error`, `error_code=AI_TIMEOUT|AI_CALL_FAILED`로 먼저 저장한 뒤 응답한다.
