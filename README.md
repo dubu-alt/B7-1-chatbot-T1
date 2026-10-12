@@ -142,6 +142,34 @@ erDiagram
 1. **로그 조회 API** — `GET /api/me/chats`(내 기록), 관리자 `GET /api/admin/*`(전체 사용자·실패·요청 흐름)
 2. **관리자 화면** — 배포 사이트에 관리자 계정으로 로그인 → 통계·사용자별 대화·AI 실패 기록·요청 흐름
 3. **확인용 SQL** — 로컬 DB 에서 `sqlite3 backend/data/app.db < backend/scripts/check_logs.sql`
+4. **Swagger (로컬)** — `backend/.env` 에 `ENABLE_DOCS=true` → 서버 재시작 → `http://localhost:8000/docs` → `POST /api/auth/login` 으로 받은 `access_token` 을 **Authorize** 에 입력(`Bearer` 없이 토큰만) → 관리자 API 호출. 응답은 모두 HTTP 200 이므로 결과는 본문 `code` 로 확인
+5. **배포 DB (Railway 콘솔)** — 대시보드 → 백엔드 서비스 → **Console** 탭 (또는 서비스 우클릭 → Copy SSH Command → 로컬 터미널에서 실행)
+
+```bash
+# DB 파일·로그가 Volume 에 있는지 확인
+ls -la /data /data/logs
+
+# 읽기 전용으로 조회 (운영 데이터 수정 방지)
+alias db='sqlite3 -readonly -header -box /data/app.db'   # -box 미지원 버전이면 -column
+
+# 테이블 목록
+db ".tables"
+
+# 가입한 사용자 (비밀번호 해시 제외)
+db "SELECT id, email, nickname, role, created_at FROM users;"
+
+# 최근 대화 10건 (질문은 앞 30자)
+db "SELECT id, user_id, substr(question,1,30) AS question, status, latency_ms, created_at FROM chat_logs ORDER BY created_at DESC LIMIT 10;"
+
+# 성공/실패 집계와 평균 응답 시간
+db "SELECT status, COUNT(*) AS cnt, ROUND(AVG(latency_ms)) AS avg_ms FROM chat_logs GROUP BY status;"
+
+# AI 실패 기록
+db "SELECT id, user_id, error_code, request_id, created_at FROM chat_logs WHERE status='error' ORDER BY created_at DESC LIMIT 5;"
+
+# 가장 최근 실패 요청의 처리 단계 추적
+db "SELECT level, event, detail, created_at FROM server_logs WHERE request_id = (SELECT request_id FROM chat_logs WHERE status='error' ORDER BY created_at DESC LIMIT 1);"
+```
 
 ---
 
