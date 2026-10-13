@@ -32,7 +32,7 @@
 | V05e | 이미 폐기된 refresh 로 로그아웃 재요청 | `code: 200` (같은 결과) | 4-2절 |
 | V05f | 만료 행 정리 작업 실행 (`delete_expired` 직접 호출) | `expires_at < now` 행만 삭제, 유효 행 유지 | 4-2절 |
 | V06 | 틀린 비밀번호 / 없는 이메일 | `code: 401` (메시지 동일) | 4-2절 |
-| V07 | `GET /api/auth/me` 유효 토큰 | `code: 200`, `data: {id, email, nickname, role}` | 4-2절 |
+| V07 | `GET /api/auth/me` 유효 토큰 | `code: 200`, `data: {email, nickname, role}` (id 없음) | 4-2절 |
 | V08 | 토큰 없음 / 변조 / 만료 | `code: 401` | 4-2절 |
 | V09 | 비로그인 `POST /api/chat`, `GET /api/me/chats` | `code: 401` | 4-2절 |
 | V10 | 챗 성공 | `code: 200`, `data: {chat_id, question, answer, created_at}`, `chat_logs` 1건(status=success) | 4-3절, 4-4절 |

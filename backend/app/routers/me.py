@@ -33,7 +33,7 @@ def my_chats(
             "total": crud.chat_log.count_success_for_user(db, user.id),  # 페이지와 무관한 전체 성공 기록 수 (더 보기 판단용)
             "items": [
                 {
-                    "chat_id": c.id,  # DB 컬럼 id 를 API 이름 chat_id 로 내보냄
+                    "chat_id": c.public_id,  # 정수 id 는 서비스 전체 대화 수를 드러내므로 UUID 로 내보냄
                     "question": c.question,
                     "answer": c.answer,
                     "created_at": to_kst_iso(c.created_at),  # +09:00 ISO 문자열

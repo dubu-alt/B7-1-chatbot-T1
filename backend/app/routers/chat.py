@@ -34,7 +34,7 @@ async def chat(
     log = await chat_service.answer(db, user, body.message)
     return ok(
         {
-            "chat_id": log.id,
+            "chat_id": log.public_id,  # 내 대화 로그와 같은 값 — 정수 id 는 서비스 전체 대화 수를 드러냄
             "question": log.question,
             "answer": log.answer,
             "created_at": to_kst_iso(log.created_at),

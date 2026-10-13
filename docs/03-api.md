@@ -314,13 +314,15 @@ Authorization: Bearer <token>
 {
   "code": 200,
   "data": {
-    "chat_id": 987,
+    "chat_id": "3f2b8c1e-7a4d-4e9b-9c61-2d5f0a8b7e43",
     "question": "FastAPI에서 CORS 설정은 어떻게 해?",
     "answer": "FastAPI에서는 CORSMiddleware를 사용합니다...",
     "created_at": "2026-09-14T10:05:12+09:00"
   }
 }
 ```
+
+> `chat_id` 는 대화의 UUID 문자열이다(내 대화 로그 조회와 같은 값). DB 의 순차 정수 id 를 내보내면 서비스 전체 대화 수와 이용량을 유추할 수 있어서다. 관리자 API 의 `chat_id` 는 DB·서버 로그와 맞춰 추적해야 하므로 정수 그대로다.
 
 **동작 흐름**
 
@@ -382,7 +384,7 @@ Authorization: Bearer <token>
   "data": {
     "total": 42,
     "items": [
-      { "chat_id": 987, "question": "FastAPI에서 CORS 설정은 어떻게 해?", "answer": "FastAPI에서는 CORSMiddleware를 사용합니다...", "created_at": "2026-09-14T10:05:12+09:00" }
+      { "chat_id": "3f2b8c1e-7a4d-4e9b-9c61-2d5f0a8b7e43", "question": "FastAPI에서 CORS 설정은 어떻게 해?", "answer": "FastAPI에서는 CORSMiddleware를 사용합니다...", "created_at": "2026-09-14T10:05:12+09:00" }
     ]
   }
 }
@@ -391,6 +393,7 @@ Authorization: Bearer <token>
 | 필드 | 의미 |
 |------|------|
 | `total` | 해당 사용자의 전체 **성공** 기록 수 |
+| `chat_id` | 대화의 UUID 문자열 (질문 전송 응답의 `chat_id` 와 같은 값). 화면의 "N번째" 는 이 값이 아니라 프론트가 `total` 과 위치로 센 내 기록 안의 순번이다 ([05-ui-ux.md](05-ui-ux.md) 화면 4) |
 | `items` | 최신순. 성공 기록만 (AI 실패 기록 노출 여부는 [11-open-issues.md](11-open-issues.md) G5) |
 
 **실패**: `401`

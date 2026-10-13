@@ -89,9 +89,9 @@ function LogsView({ onRefresh }: { onRefresh: () => void }) {
         onReachTop={history.loadOlder}
       >
         <ol aria-label="대화 기록" className={styles.list}>
-          {history.items.map((item) => (
+          {history.items.map((item, index) => (
             <li key={item.chat_id}>
-              <LogCard item={item} />
+              <LogCard item={item} number={history.firstNumber + index} />
             </li>
           ))}
         </ol>

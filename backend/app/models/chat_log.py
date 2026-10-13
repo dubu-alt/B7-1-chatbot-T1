@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -12,7 +13,10 @@ class ChatLog(Base):
 
     __tablename__ = "chat_logs"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # API 응답에서는 chat_id
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # 내부·관리자 API 용 대화 번호 (관리자 응답의 chat_id)
+    # 일반 사용자 API 의 chat_id. 전체 공통 순차 id 를 내보내면 서비스 전체 대화 수·이용량을 유추할 수 있어 무작위 UUID 를 쓴다
+    # unique+index → UNIQUE INDEX ix_chat_logs_public_id (기존 DB 는 database.add_public_id 가 같은 이름으로 만든다)
+    public_id: Mapped[str] = mapped_column(Text, unique=True, index=True, default=lambda: str(uuid4()))
     # 사용자 식별 (필수 추적 필드). 사용자가 삭제되면 대화도 함께 삭제(CASCADE)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     question: Mapped[str] = mapped_column(Text)  # 질문 (필수 추적 필드), 앞뒤 공백 제거 후 저장

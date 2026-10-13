@@ -55,20 +55,21 @@ def build_engine(url: str):
     return eng
 
 
-def add_user_public_id(eng: Engine) -> None:
-    """users.public_id 가 없던 기존 DB 를 맞춘다. 서버 시작 때마다 실행해도 결과가 같다.
+def add_public_id(eng: Engine, table: str) -> None:
+    """public_id 가 없던 기존 DB 의 테이블(users, chat_logs)을 맞춘다. 서버 시작 때마다 실행해도 결과가 같다.
 
     create_all 은 이미 있는 테이블에 컬럼을 추가하지 않으므로 Railway 의 기존 app.db 는 직접 고쳐야 한다.
     ① 컬럼이 없으면 추가 ② 비어 있는 행마다 UUID 채우기 ③ UNIQUE INDEX 생성 (모델과 같은 이름 → 새 DB 에서는 아무 일도 안 함)
     SQLite 는 기존 테이블에 NOT NULL 컬럼을 기본값 없이 추가할 수 없어 컬럼 자체는 NULL 허용으로 남지만,
-    ②에서 모두 채우고 새 사용자는 모델 기본값(uuid4)으로 항상 채워진다.
+    ②에서 모두 채우고 새 행은 모델 기본값(uuid4)으로 항상 채워진다.
+    table 은 코드에 적힌 테이블 이름만 받는다 (SQL 에 그대로 들어가므로 사용자 입력을 넘기지 않는다).
     """
     with eng.begin() as conn:
-        if "public_id" not in {col["name"] for col in inspect(conn).get_columns("users")}:
-            conn.execute(text("ALTER TABLE users ADD COLUMN public_id TEXT"))
-        for user_id in conn.scalars(text("SELECT id FROM users WHERE public_id IS NULL")).all():
-            conn.execute(text("UPDATE users SET public_id = :p WHERE id = :i"), {"p": str(uuid4()), "i": user_id})
-        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_public_id ON users (public_id)"))
+        if "public_id" not in {col["name"] for col in inspect(conn).get_columns(table)}:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN public_id TEXT"))
+        for row_id in conn.scalars(text(f"SELECT id FROM {table} WHERE public_id IS NULL")).all():
+            conn.execute(text(f"UPDATE {table} SET public_id = :p WHERE id = :i"), {"p": str(uuid4()), "i": row_id})
+        conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table}_public_id ON {table} (public_id)"))
 
 
 # 앱 전체에서 공유하는 엔진 1개 (import 시점에 DATABASE_URL 로 생성)

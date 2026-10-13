@@ -10,7 +10,7 @@ from app import crud
 from app.core import rate_limit
 from app.core.security import hash_refresh_token
 from app.core.timeutil import utcnow
-from app.database import add_user_public_id
+from app.database import add_public_id
 from app.models import RefreshToken, ServerLog, User
 from app.services import auth_service
 from tests.conftest import PASSWORD, auth_header, login, signup
@@ -204,24 +204,26 @@ def test_integer_sub_token_rejected(client, db):
     assert client.get("/api/auth/me", headers=auth_header(old)).json()["code"] == 401
 
 
-def test_add_user_public_id_migrates_existing_db(tmp_path):
-    """public_id 가 없던 기존 DB: 컬럼 추가 + 기존 사용자마다 서로 다른 UUID + UNIQUE INDEX. 다시 실행해도 값이 그대로다"""
+def test_add_public_id_migrates_existing_db(tmp_path):
+    """public_id 가 없던 기존 DB(users·chat_logs): 컬럼 추가 + 기존 행마다 서로 다른 UUID + UNIQUE INDEX. 다시 실행해도 값이 그대로다"""
     eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
     with eng.begin() as conn:
-        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)"))
-        conn.execute(text("INSERT INTO users (email) VALUES ('a@example.com'), ('b@example.com'), ('c@example.com')"))
+        for table in ("users", "chat_logs"):
+            conn.execute(text(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, name TEXT)"))
+            conn.execute(text(f"INSERT INTO {table} (name) VALUES ('a'), ('b'), ('c')"))
 
-    add_user_public_id(eng)
-    with eng.connect() as conn:
-        first = dict(conn.execute(text("SELECT id, public_id FROM users")).all())
-    assert len(first) == 3 and len(set(first.values())) == 3
-    assert all(str(uuid.UUID(v)) == v for v in first.values())
-    index = {i["name"]: i for i in inspect(eng).get_indexes("users")}["ix_users_public_id"]
-    assert index["unique"]
+    for table in ("users", "chat_logs"):
+        add_public_id(eng, table)
+        with eng.connect() as conn:
+            first = dict(conn.execute(text(f"SELECT id, public_id FROM {table}")).all())
+        assert len(first) == 3 and len(set(first.values())) == 3
+        assert all(str(uuid.UUID(v)) == v for v in first.values())
+        index = {i["name"]: i for i in inspect(eng).get_indexes(table)}[f"ix_{table}_public_id"]
+        assert index["unique"]
 
-    add_user_public_id(eng)  # 서버 재시작 가정
-    with eng.connect() as conn:
-        assert dict(conn.execute(text("SELECT id, public_id FROM users")).all()) == first
+        add_public_id(eng, table)  # 서버 재시작 가정
+        with eng.connect() as conn:
+            assert dict(conn.execute(text(f"SELECT id, public_id FROM {table}")).all()) == first
     eng.dispose()
 
 

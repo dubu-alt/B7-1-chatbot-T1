@@ -41,6 +41,11 @@ export function useChatHistory() {
     [first.data, older],
   )
 
+  // 맨 위(가장 오래된) 항목이 내 기록에서 몇 번째인가. 가장 오래된 대화가 1번째, 최신이 총 기록 수다.
+  // 첫 페이지의 total 로 센다 — 받은 목록은 첫 페이지 최신부터 빈틈없이 이어지므로(겹침은 거름),
+  // 보는 도중 새 대화가 생겨 total 이 늘어도 이미 보이는 카드의 순번은 바뀌지 않는다
+  const firstNumber = (first.data?.total ?? 0) - items.length + 1
+
   const loadOlder = useCallback(async () => {
     const result = await olderRequest.submit(received)
     if (!result.ok) return
@@ -51,6 +56,8 @@ export function useChatHistory() {
   return {
     /** 위가 오래된 것 · 아래가 최신 */
     items,
+    /** items[0] 의 순번. items[i] 는 firstNumber + i 번째 대화 */
+    firstNumber,
     total,
     isLoading: first.isPending,
     loadError: first.error,
@@ -63,7 +70,7 @@ export function useChatHistory() {
 }
 
 function dedupe(items: ChatLogItem[]): ChatLogItem[] {
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   return items.filter((item) => {
     if (seen.has(item.chat_id)) return false
     seen.add(item.chat_id)

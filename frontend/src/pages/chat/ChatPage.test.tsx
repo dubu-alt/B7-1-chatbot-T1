@@ -18,7 +18,7 @@ beforeAll(() => {
 })
 
 const item = (id: number, q: string, a: string) => ({
-  chat_id: id,
+  chat_id: `c-${id}`,
   question: q,
   answer: a,
   created_at: '2026-09-28T10:00:00+09:00',
@@ -47,7 +47,7 @@ function mockChat(respond: (message: string) => JsonBodyType) {
 
 const ok = (message: string) => ({
   code: 200,
-  data: { chat_id: 99, question: message, answer: `답: ${message}`, created_at: '2026-09-28T10:05:00+09:00' },
+  data: { chat_id: 'c-99', question: message, answer: `답: ${message}`, created_at: '2026-09-28T10:05:00+09:00' },
 })
 const timeout = { code: 504, data: { message: '현재 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요.' } }
 
@@ -161,7 +161,7 @@ describe('챗 — 전송', () => {
     mockHistory([])
     mockChat(() => ({
       code: 200,
-      data: { chat_id: 1, question: 'q', answer: '<img src=x onerror=alert(1)>', created_at: '' },
+      data: { chat_id: 'c-1', question: 'q', answer: '<img src=x onerror=alert(1)>', created_at: '' },
     }))
     renderChat()
     await screen.findByText('안녕하세요. 무엇이든 물어보세요.')

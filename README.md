@@ -106,7 +106,7 @@ Content-Type: application/json
 {
   "code": 200,
   "data": {
-    "chat_id": 987,
+    "chat_id": "3f2b8c1e-7a4d-4e9b-9c61-2d5f0a8b7e43",
     "question": "FastAPI에서 CORS 설정은 어떻게 해?",
     "answer": "FastAPI에서는 CORSMiddleware를 사용합니다...",
     "created_at": "2026-09-14T10:05:12+09:00"

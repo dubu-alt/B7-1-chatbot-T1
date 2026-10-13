@@ -243,7 +243,7 @@ sequenceDiagram
     else 신규
         A->>A: bcrypt 해싱
         A->>D: crud.user.create(..., role="user") — UNIQUE 경합 시 IntegrityError → 409
-        A-->>B: code:201 {id, email, nickname, created_at}
+        A-->>B: code:201 {email, nickname, created_at} (id 는 내보내지 않음)
     end
     B->>B: 로그인 화면 이동 + "가입 완료" 안내
 ```

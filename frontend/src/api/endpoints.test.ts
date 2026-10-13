@@ -126,7 +126,7 @@ describe('chat 엔드포인트', () => {
         return HttpResponse.json({
           code: 200,
           data: {
-            chat_id: 987,
+            chat_id: '6f1c2b9e-3d4a-4e5f-8a7b-1c2d3e4f5a6b',
             question: 'FastAPI에서 CORS 설정은?',
             answer: 'CORSMiddleware 를 사용합니다.',
             created_at: '2026-09-17T10:05:12+09:00',
@@ -138,7 +138,7 @@ describe('chat 엔드포인트', () => {
     const result = await sendMessage({ message: 'FastAPI에서 CORS 설정은?' })
 
     expect(received).toEqual({ message: 'FastAPI에서 CORS 설정은?' })
-    expect(result.chat_id).toBe(987)
+    expect(result.chat_id).toBe('6f1c2b9e-3d4a-4e5f-8a7b-1c2d3e4f5a6b')
   })
 })
 
@@ -171,7 +171,7 @@ describe('logs 엔드포인트', () => {
             total: 42,
             items: [
               {
-                chat_id: 1,
+                chat_id: 'c-1',
                 question: 'q',
                 answer: 'a',
                 created_at: '2026-09-17T10:00:00+09:00',

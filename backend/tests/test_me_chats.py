@@ -44,6 +44,9 @@ def test_v18_only_my_success_chats(client, db):
     assert [i["question"] for i in body["data"]["items"]] == ["질문 1"]
     assert set(body["data"]["items"][0]) == {"chat_id", "question", "answer", "created_at"}
 
+    # chat_id 는 정수 DB id 가 아니라 그 대화의 public_id(UUID)
+    assert body["data"]["items"][0]["chat_id"] == crud.chat_log.list_success_for_user(db, alice.id, 1, 0)[0].public_id
+
     bob_items = client.get("/api/me/chats", headers=bob_h).json()["data"]["items"]
     assert [i["question"] for i in bob_items] == ["질문 2"]
 

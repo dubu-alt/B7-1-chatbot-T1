@@ -103,7 +103,8 @@ export interface ChatRequest {
 }
 
 export interface ChatResponse {
-  chat_id: number
+  /** 대화의 공개 id(UUID). 순차 번호를 내보내면 서비스 전체 대화 수가 드러나 서버가 UUID 로 준다 (docs/03-api.md 2절) */
+  chat_id: string
   question: string
   answer: string
   created_at: string
@@ -120,7 +121,8 @@ export interface ChatLogQuery {
 }
 
 export interface ChatLogItem {
-  chat_id: number
+  /** ChatResponse.chat_id 와 같은 공개 id(UUID). 관리자 응답의 chat_id(정수 DB 번호)와 다르다 */
+  chat_id: string
   question: string
   answer: string
   created_at: string

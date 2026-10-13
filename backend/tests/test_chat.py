@@ -9,6 +9,7 @@ import json
 import sqlite3
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import httpx
@@ -100,7 +101,11 @@ def test_v10_success_saved(client, db, fake_ai, user_h):
     assert "test-ai-key" not in json.dumps(res)
 
     (log,) = _all_logs(db)
-    assert (log.id, log.status, log.error_code) == (data["chat_id"], "success", None)
+    assert (log.public_id, log.status, log.error_code) == (data["chat_id"], "success", None)
+    assert str(uuid.UUID(data["chat_id"])) == data["chat_id"]  # 순차 정수 id 가 아니라 UUID
+    # 챗 화면이 두 응답을 한 화면에 섞어 보여 주므로, 같은 대화는 내 대화 로그에서도 같은 chat_id 여야 한다
+    (item,) = client.get("/api/me/chats", headers=user_h).json()["data"]["items"]
+    assert item["chat_id"] == data["chat_id"]
     assert len(log.request_id) == 12 and log.latency_ms is not None
 
 

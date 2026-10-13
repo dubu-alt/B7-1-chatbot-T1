@@ -41,7 +41,7 @@
 
 ### S5. 내 대화 기록 추적
 1. 상단 탭 "내 대화 로그" → `GET /api/me/chats?limit=20&offset=0`
-2. 본인 기록만 최신순 카드 목록 (`chat_id`, 시각, QUESTION / ANSWER), 상단에 `total`
+2. 본인 기록만 최신순 카드 목록 (내 기록 안의 순번 "N번째", 시각, QUESTION / ANSWER), 상단에 `total`
 3. 다른 계정으로 로그인하면 **서로의 기록이 보이지 않음**
 
 ### S6. 로그아웃 / 토큰 만료

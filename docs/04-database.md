@@ -25,6 +25,7 @@ erDiagram
     }
     chat_logs {
         INTEGER id PK
+        TEXT public_id UK "일반 사용자 API 의 chat_id (UUID)"
         INTEGER user_id FK "사용자 식별 (필수)"
         TEXT question "질문 (필수)"
         TEXT answer "응답 (필수, 실패 시 NULL)"
@@ -72,7 +73,8 @@ access token(JWT)은 서버에 저장하지 않는다. **refresh token 만 해�
 
 | 필드 | 타입 | 제약 | 설명 |
 |------|------|------|------|
-| `id` | INTEGER | PK | 대화 식별자. API 응답에서는 `chat_id` |
+| `id` | INTEGER | PK | 내부 대화 식별자. 관리자 API 의 `chat_id`·서버 로그의 `chat_id` |
+| `public_id` | TEXT | UNIQUE, INDEX, NOT NULL | 일반 사용자 API(질문 전송·내 대화 로그)의 `chat_id`(UUID). 전체 공통 순차 id 를 내보내면 서비스 전체 대화 수·이용량을 유추할 수 있어 무작위 값을 쓴다 |
 | `user_id` | INTEGER | FK→users.id ON DELETE CASCADE, INDEX | **사용자 식별** — 조회 시 토큰의 사용자로만 필터 |
 | `question` | TEXT | NOT NULL | **질문** (앞뒤 공백 제거 후 저장) |
 | `answer` | TEXT | NULL 허용 | **AI 응답**. `status=error` 이면 NULL |
@@ -133,7 +135,7 @@ LIMIT :context_turns;   -- AI_CONTEXT_TURNS (5, A16 확정)
 **내 로그 조회** (`GET /api/me/chats`)
 ```sql
 SELECT COUNT(*) FROM chat_logs WHERE user_id = :user_id AND status = 'success';
-SELECT id, question, answer, created_at FROM chat_logs
+SELECT public_id, question, answer, created_at FROM chat_logs
 WHERE user_id = :user_id AND status = 'success'
 ORDER BY id DESC LIMIT :limit OFFSET :offset;
 ```
@@ -167,7 +169,7 @@ WHERE request_id = :request_id ORDER BY id;
 
 SQLAlchemy 모델이 만드는 스키마다. `sqlite3 data/app.db ".schema"` 로 확인할 수 있고, 2026-10-08 로컬 DB 의 네 테이블 컬럼이 아래와 일치함을 확인했다.
 
-> `users.public_id` 는 나중에 추가한 컬럼이다. `create_all` 은 이미 있는 테이블에 컬럼을 추가하지 않으므로, 서버 시작 시 `add_user_public_id`(`app/database.py`)가 기존 DB 에 컬럼을 추가하고 비어 있는 행마다 UUID 를 채운 뒤 `ix_users_public_id` 를 만든다. SQLite 는 기존 테이블에 기본값 없는 NOT NULL 컬럼을 추가할 수 없어, 이렇게 옮겨진 DB 에서는 `public_id` 컬럼이 NULL 허용으로 보이지만 값은 모두 채워져 있다. 배포 직후 이전 형식(정수 `sub`) access token 은 401 이 되지만, refresh token 은 정수 id 와 무관해 그대로 유효하므로 프론트의 자동 재발급으로 새 형식 토큰을 받는다 (로그인 중이던 사용자가 다시 로그인할 필요 없음).
+> `users.public_id`·`chat_logs.public_id` 는 나중에 추가한 컬럼이다. `create_all` 은 이미 있는 테이블에 컬럼을 추가하지 않으므로, 서버 시작 시 `add_public_id`(`app/database.py`)가 두 테이블마다 기존 DB 에 컬럼을 추가하고 비어 있는 행마다 UUID 를 채운 뒤 `ix_users_public_id`·`ix_chat_logs_public_id` 를 만든다. SQLite 는 기존 테이블에 기본값 없는 NOT NULL 컬럼을 추가할 수 없어, 이렇게 옮겨진 DB 에서는 `public_id` 컬럼이 NULL 허용으로 보이지만 값은 모두 채워져 있다. 배포 직후 이전 형식(정수 `sub`) access token 은 401 이 되지만, refresh token 은 정수 id 와 무관해 그대로 유효하므로 프론트의 자동 재발급으로 새 형식 토큰을 받는다 (로그인 중이던 사용자가 다시 로그인할 필요 없음).
 
 ```sql
 CREATE TABLE users (
@@ -185,6 +187,7 @@ CREATE UNIQUE INDEX ix_users_public_id ON users (public_id);
 
 CREATE TABLE chat_logs (
 	id INTEGER NOT NULL,
+	public_id TEXT NOT NULL,
 	user_id INTEGER NOT NULL,
 	question TEXT NOT NULL,
 	answer TEXT,
@@ -196,6 +199,7 @@ CREATE TABLE chat_logs (
 	PRIMARY KEY (id),
 	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
 );
+CREATE UNIQUE INDEX ix_chat_logs_public_id ON chat_logs (public_id);
 CREATE INDEX ix_chat_logs_user_id ON chat_logs (user_id);
 CREATE INDEX ix_chat_logs_status ON chat_logs (status);
 CREATE INDEX ix_chat_logs_request_id ON chat_logs (request_id);

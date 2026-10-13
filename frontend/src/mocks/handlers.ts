@@ -36,7 +36,10 @@ interface TokenEntry {
 }
 
 interface MockChat {
+  /** DB 의 대화 번호 역할. 관리자 응답에만 내보낸다 */
   chatId: number
+  /** 일반 사용자 응답의 chat_id (실서버의 chat_logs.public_id, UUID) */
+  publicId: string
   userId: number
   question: string
   /** 실패 기록은 null */
@@ -99,6 +102,8 @@ function loadDb(): MockDb {
       errorCode: chat.errorCode ?? null,
       latencyMs: chat.latencyMs ?? 500,
       requestId: chat.requestId ?? makeRequestId(chat.chatId),
+      // 대화 id 를 UUID 로 바꾸기 전에 저장된 대화
+      publicId: chat.publicId ?? crypto.randomUUID(),
     }))
     return saved
   } catch {
@@ -343,6 +348,7 @@ export const handlers = [
     const chatId = db.chats.length + 1
     const base = {
       chatId,
+      publicId: crypto.randomUUID(),
       userId: user.id,
       question,
       requestId: makeRequestId(chatId),
@@ -378,7 +384,7 @@ export const handlers = [
     return HttpResponse.json({
       code: 200,
       data: {
-        chat_id: chat.chatId,
+        chat_id: chat.publicId,
         question: chat.question,
         answer: chat.answer,
         created_at: chat.createdAt,
@@ -403,7 +409,7 @@ export const handlers = [
       data: {
         total: mine.length,
         items: mine.slice(offset, offset + limit).map((chat) => ({
-          chat_id: chat.chatId,
+          chat_id: chat.publicId,
           question: chat.question,
           answer: chat.answer,
           created_at: chat.createdAt,

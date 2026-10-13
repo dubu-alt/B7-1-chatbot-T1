@@ -16,8 +16,10 @@ beforeAll(() => {
   instance.defaults.baseURL = BASE
 })
 
+// chat_id 는 서버의 공개 id(UUID 자리). 화면 번호는 이 값이 아니라 내 기록 안의 순번이다.
+// ids 를 1..N 으로 두면 id 와 순번이 같아 기대값을 읽기 쉽다
 const item = (id: number) => ({
-  chat_id: id,
+  chat_id: `chat-${id}`,
   question: `질문 ${id}`,
   answer: `답변 ${id}`,
   created_at: '2026-09-28T10:05:00+09:00',
@@ -74,17 +76,19 @@ describe('내 대화 로그 — 첫 화면', () => {
     await waitFor(() => expect(cards()).toHaveLength(20))
     expect(total()).toBe('25')
     // 위가 오래된 것, 아래가 최신 — 챗 화면과 같은 규칙
-    expect(cardIds()[0]).toBe('대화 #6')
-    expect(cardIds().at(-1)).toBe('대화 #25')
+    expect(cardIds()[0]).toBe('6번째 대화')
+    expect(cardIds().at(-1)).toBe('25번째 대화')
     expect(requests[0]).toEqual({ limit: '20', offset: '0' })
   })
 
-  it('카드에 번호·시각·질문·답변이 있다', async () => {
+  it('카드에 순번·시각·질문·답변이 있다', async () => {
     mockLogs(() => [7])
     renderLogs()
 
     const card = (await screen.findAllByRole('article'))[0]
-    expect(card).toHaveTextContent('#7')
+    // 기록이 1건이면 1번째다. 서버 id(chat-7)는 보여 주지 않는다 — 서비스 전체 대화 수를 드러내지 않게
+    expect(card).toHaveTextContent('1번째')
+    expect(card).not.toHaveTextContent('chat-7')
     // 보이는 글자는 오늘 기준("오늘 10:05"·"9월 28일 10:05")이라 날짜마다 달라진다.
     // 기계가 읽는 값과 마우스를 올리면 보이는 전체 시각으로 확인한다
     const time = card.querySelector('time')
@@ -144,8 +148,8 @@ describe('내 대화 로그 — 위로 스크롤해 이전 기록 불러오기',
 
     await waitFor(() => expect(cards()).toHaveLength(25))
     expect(requests[1]).toEqual({ limit: '20', offset: '20' })
-    expect(cardIds()[0]).toBe('대화 #1')
-    expect(cardIds().at(-1)).toBe('대화 #25')
+    expect(cardIds()[0]).toBe('1번째 대화')
+    expect(cardIds().at(-1)).toBe('25번째 대화')
   })
 
   it('다 받은 뒤에는 더 요청하지 않고 아무것도 표시하지 않는다', async () => {
@@ -171,9 +175,11 @@ describe('내 대화 로그 — 위로 스크롤해 이전 기록 불러오기',
     ids = range(26, 1)
     scrollToTop()
 
-    await waitFor(() => expect(cardIds()[0]).toBe('대화 #1'))
+    await waitFor(() => expect(cardIds()[0]).toBe('1번째 대화'))
     expect(new Set(cardIds()).size).toBe(cardIds().length)
     expect(total()).toBe('26')
+    // 새 대화(26번째)는 아직 받지 않았다. 이미 보이던 카드의 순번은 바뀌지 않는다
+    expect(cardIds().at(-1)).toBe('25번째 대화')
   })
 
   it('스크롤이 여러 번 닿아도 한 번만 요청한다', async () => {
@@ -229,7 +235,7 @@ describe('내 대화 로그 — 새로고침', () => {
     expect(refresh.textContent).toBe('')
     await user.click(refresh)
 
-    await waitFor(() => expect(cardIds().at(-1)).toBe('대화 #26'))
+    await waitFor(() => expect(cardIds().at(-1)).toBe('26번째 대화'))
     expect(cards()).toHaveLength(20)
     expect(total()).toBe('26')
   })

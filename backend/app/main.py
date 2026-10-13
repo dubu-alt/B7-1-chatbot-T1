@@ -15,7 +15,7 @@ from app.config import settings
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.logging import setup_logging
 from app.core.responses import register_exception_handlers
-from app.database import Base, SessionLocal, add_user_public_id, engine
+from app.database import Base, SessionLocal, add_public_id, engine
 from app.routers import admin, auth, chat, me
 from app.services import ai_service, auth_service
 
@@ -64,8 +64,9 @@ async def lifespan(_: FastAPI):
         )
     # 모델 정의대로 테이블 생성 (이미 있는 테이블은 건드리지 않음)
     Base.metadata.create_all(bind=engine)
-    # 기존 DB 의 users 에 public_id 추가·채우기 (JWT sub 를 정수 id 대신 UUID 로)
-    add_user_public_id(engine)
+    # 기존 DB 에 public_id 추가·채우기 — JWT sub(users)와 일반 사용자 API 의 chat_id(chat_logs)를 정수 id 대신 UUID 로
+    add_public_id(engine, "users")
+    add_public_id(engine, "chat_logs")
     # ADMIN_EMAIL 관리자 계정 생성 또는 승격
     with SessionLocal() as db:
         auth_service.ensure_admin(db)
