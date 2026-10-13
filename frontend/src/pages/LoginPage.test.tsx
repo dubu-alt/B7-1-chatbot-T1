@@ -24,7 +24,7 @@ const TOKENS = {
   refresh_expires_in: 86_400,
 }
 
-const USER = { id: 1, email: 'user@example.com', nickname: '테스터', role: 'user' }
+const USER = { email: 'user@example.com', nickname: '테스터', role: 'user' }
 
 function mockLoginSuccess() {
   server.use(

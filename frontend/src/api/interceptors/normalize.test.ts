@@ -31,13 +31,13 @@ describe('normalize — 성공 응답', () => {
   it('회원가입의 code 201 도 성공으로 처리한다', async () => {
     server.use(
       http.post(`${BASE}/api/auth/signup`, () =>
-        HttpResponse.json({ code: 201, data: { id: 1, email: 'a@b.c', nickname: '테스터' } }),
+        HttpResponse.json({ code: 201, data: { email: 'a@b.c', nickname: '테스터' } }),
       ),
     )
 
     const res = await instance.post('/api/auth/signup', {})
 
-    expect(res.data).toMatchObject({ id: 1 })
+    expect(res.data).toMatchObject({ email: 'a@b.c' })
   })
 })
 

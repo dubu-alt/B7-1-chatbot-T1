@@ -17,8 +17,8 @@ beforeAll(() => {
   instance.defaults.baseURL = BASE
 })
 
-const USER = { id: 1, email: 'user@example.com', nickname: '테스터', role: 'user' }
-const ADMIN = { id: 2, email: 'admin@example.com', nickname: '관리자', role: 'admin' }
+const USER = { email: 'user@example.com', nickname: '테스터', role: 'user' }
+const ADMIN = { email: 'admin@example.com', nickname: '관리자', role: 'admin' }
 
 /** GET /api/auth/me 핸들러. 호출 횟수를 센다 */
 function mockMe(data: unknown = USER, options: { fail?: boolean } = {}) {

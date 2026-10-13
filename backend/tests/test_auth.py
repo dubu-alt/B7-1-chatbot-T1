@@ -1,14 +1,16 @@
 """인증 API 테스트 — 07-verification V01~V08, V05b~V05f, V30, V22·V23."""
 
+import uuid
 from datetime import timedelta
 
 import jwt
-from sqlalchemy import select
+from sqlalchemy import create_engine, inspect, select, text
 
 from app import crud
 from app.core import rate_limit
 from app.core.security import hash_refresh_token
 from app.core.timeutil import utcnow
+from app.database import add_user_public_id
 from app.models import RefreshToken, ServerLog, User
 from app.services import auth_service
 from tests.conftest import PASSWORD, auth_header, login, signup
@@ -17,12 +19,12 @@ from tests.conftest import PASSWORD, auth_header, login, signup
 # ---------- 회원가입 ----------
 # 테스트 함수 이름의 v01·v02 … 는 docs/07-verification.md 검증 ID 와 대응한다
 def test_v01_signup_success(client, db):
-    """가입 성공: HTTP 200 + code 201, 해시 미노출, 이메일 소문자·닉네임 공백 정리, role=user"""
+    """가입 성공: HTTP 200 + code 201, 해시·id 미노출, 이메일 소문자·닉네임 공백 정리, role=user"""
     res = client.post("/api/auth/signup", json={"email": "User@Example.com", "password": PASSWORD, "nickname": " 어썸체크 "})
     assert res.status_code == 200
     body = res.json()
     assert body["code"] == 201
-    assert set(body["data"]) == {"id", "email", "nickname", "created_at"}
+    assert set(body["data"]) == {"email", "nickname", "created_at"}
     assert body["data"]["email"] == "user@example.com"
     assert body["data"]["nickname"] == "어썸체크"
     assert body["data"]["created_at"].endswith("+09:00")
@@ -151,29 +153,76 @@ def test_v05f_delete_expired(client, db):
 
 # ---------- 인증 확인 ----------
 def test_v07_me(client):
-    """유효한 토큰으로 /me → id·email·nickname·role"""
+    """유효한 토큰으로 /me → email·nickname·role (id 는 내보내지 않는다)"""
     signup(client)
     token = login(client)["data"]["access_token"]
     body = client.get("/api/auth/me", headers=auth_header(token)).json()
     assert body["code"] == 200
-    assert set(body["data"]) == {"id", "email", "nickname", "role"}
+    assert set(body["data"]) == {"email", "nickname", "role"}
     assert body["data"]["role"] == "user"
 
 
-def test_v08_me_unauthorized(client):
+def test_v08_me_unauthorized(client, db):
     """헤더 없음·쓰레기 값·Basic 방식·만료·다른 키 서명·alg=none 토큰은 모두 401"""
     signup(client)
+    sub = crud.user.get_by_email(db, "user@example.com").public_id  # 실제 사용자의 sub 로 만들어 sub 이외의 이유로만 실패하게
     assert client.get("/api/auth/me").json()["code"] == 401  # 헤더 없음
     assert client.get("/api/auth/me", headers=auth_header("garbage")).json()["code"] == 401
     assert client.get("/api/auth/me", headers={"Authorization": "Basic abc"}).json()["code"] == 401
 
     now = utcnow()
-    expired = jwt.encode({"sub": "1", "exp": now - timedelta(minutes=1)}, "test-secret-key-for-pytest-only-0123456789abcdef", algorithm="HS256")
+    expired = jwt.encode({"sub": sub, "exp": now - timedelta(minutes=1)}, "test-secret-key-for-pytest-only-0123456789abcdef", algorithm="HS256")
     assert client.get("/api/auth/me", headers=auth_header(expired)).json()["code"] == 401
-    forged = jwt.encode({"sub": "1", "exp": now + timedelta(minutes=5)}, "another-secret-key-0123456789abcdefghij", algorithm="HS256")
+    forged = jwt.encode({"sub": sub, "exp": now + timedelta(minutes=5)}, "another-secret-key-0123456789abcdefghij", algorithm="HS256")
     assert client.get("/api/auth/me", headers=auth_header(forged)).json()["code"] == 401
-    none_alg = jwt.encode({"sub": "1", "exp": now + timedelta(minutes=5)}, None, algorithm="none")
+    none_alg = jwt.encode({"sub": sub, "exp": now + timedelta(minutes=5)}, None, algorithm="none")
     assert client.get("/api/auth/me", headers=auth_header(none_alg)).json()["code"] == 401
+
+
+# ---------- 사용자 id 비노출 ----------
+def test_jwt_sub_is_public_id(client, db):
+    """발급된 access token 의 sub 는 정수 id 가 아니라 그 사용자의 public_id(UUID)다 — 로그인·재발급 모두"""
+    signup(client)
+    user = crud.user.get_by_email(db, "user@example.com")
+    tokens = login(client)["data"]
+    renewed = client.post("/api/auth/refresh", json={"refresh_token": tokens["refresh_token"]}).json()["data"]
+    for token in (tokens["access_token"], renewed["access_token"]):
+        sub = jwt.decode(token, options={"verify_signature": False})["sub"]
+        assert not sub.isdigit() and sub != str(user.id)
+        assert str(uuid.UUID(sub)) == sub == user.public_id
+
+
+def test_integer_sub_token_rejected(client, db):
+    """서명이 올바르더라도 정수 sub(이전 형식) 토큰은 401 — 배포 전 발급된 토큰은 다시 로그인해야 한다"""
+    signup(client)
+    user = crud.user.get_by_email(db, "user@example.com")
+    old = jwt.encode(
+        {"sub": str(user.id), "exp": utcnow() + timedelta(minutes=5)},
+        "test-secret-key-for-pytest-only-0123456789abcdef",
+        algorithm="HS256",
+    )
+    assert client.get("/api/auth/me", headers=auth_header(old)).json()["code"] == 401
+
+
+def test_add_user_public_id_migrates_existing_db(tmp_path):
+    """public_id 가 없던 기존 DB: 컬럼 추가 + 기존 사용자마다 서로 다른 UUID + UNIQUE INDEX. 다시 실행해도 값이 그대로다"""
+    eng = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)"))
+        conn.execute(text("INSERT INTO users (email) VALUES ('a@example.com'), ('b@example.com'), ('c@example.com')"))
+
+    add_user_public_id(eng)
+    with eng.connect() as conn:
+        first = dict(conn.execute(text("SELECT id, public_id FROM users")).all())
+    assert len(first) == 3 and len(set(first.values())) == 3
+    assert all(str(uuid.UUID(v)) == v for v in first.values())
+    index = {i["name"]: i for i in inspect(eng).get_indexes("users")}["ix_users_public_id"]
+    assert index["unique"]
+
+    add_user_public_id(eng)  # 서버 재시작 가정
+    with eng.connect() as conn:
+        assert dict(conn.execute(text("SELECT id, public_id FROM users")).all()) == first
+    eng.dispose()
 
 
 # ---------- 관리자 시드 · 권한 ----------

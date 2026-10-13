@@ -261,7 +261,7 @@ sequenceDiagram
     alt 불일치
         A-->>B: code:401 "이메일 또는 비밀번호가 올바르지 않습니다."
     else 일치
-        A->>A: access = jwt.encode({sub: user.id, exp: now + JWT_EXPIRE_MINUTES}, SECRET, HS256)
+        A->>A: access = jwt.encode({sub: user.public_id, exp: now + JWT_EXPIRE_MINUTES}, SECRET, HS256)
         A->>A: refresh = secrets.token_urlsafe(48)
         A->>D: refresh_tokens INSERT (user_id, sha256(refresh), expires_at)
         A-->>B: code:200 {access_token, refresh_token, token_type, expires_in, refresh_expires_in}
@@ -298,7 +298,7 @@ sequenceDiagram
 
 1. `Authorization` 헤더 없음 / `Bearer ` 형식 아님 → **code:401**
 2. `jwt.decode(token, SECRET, algorithms=["HS256"])` 실패(만료·서명 오류) → **code:401**
-3. payload `sub` 로 사용자 조회, 없으면 **code:401**
+3. payload `sub`(public_id)로 사용자 조회, 없으면 **code:401** (이전 형식인 정수 `sub` 토큰도 여기서 401)
 4. (`require_admin`) `user.role != "admin"` → **code:403**, 로그 `admin_forbidden`
 5. 사용자 반환 → 라우터는 `user.id` 만 사용. **클라이언트가 보낸 user_id 는 절대 사용하지 않는다.**
 

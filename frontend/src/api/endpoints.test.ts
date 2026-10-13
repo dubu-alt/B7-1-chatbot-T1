@@ -36,7 +36,6 @@ describe('auth 엔드포인트', () => {
         return HttpResponse.json({
           code: 201,
           data: {
-            id: 1,
             email: 'user@example.com',
             nickname: '테스터',
             created_at: '2026-09-17T10:00:00+09:00',
@@ -56,7 +55,7 @@ describe('auth 엔드포인트', () => {
       password: 'password1234',
       nickname: '테스터',
     })
-    expect(user.id).toBe(1)
+    expect(user.email).toBe('user@example.com')
     expect(user.created_at).toBe('2026-09-17T10:00:00+09:00')
   })
 
@@ -106,7 +105,7 @@ describe('auth 엔드포인트', () => {
       http.get(`${BASE}/api/auth/me`, () =>
         HttpResponse.json({
           code: 200,
-          data: { id: 1, email: 'admin@example.com', nickname: '관리자', role: 'admin' },
+          data: { email: 'admin@example.com', nickname: '관리자', role: 'admin' },
         }),
       ),
     )

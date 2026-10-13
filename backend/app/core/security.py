@@ -35,29 +35,32 @@ def verify_password(password: str, hashed_password: str) -> bool:
 DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(16))
 
 
-def create_access_token(user_id: int) -> str:
-    """user_id 로 access token(JWT) 을 만든다. 서버는 이 토큰을 저장하지 않는다."""
+def create_access_token(public_id: str) -> str:
+    """사용자의 public_id 로 access token(JWT) 을 만든다. 서버는 이 토큰을 저장하지 않는다.
+
+    토큰은 브라우저에 저장돼 누구나 디코드할 수 있으므로 정수 users.id 대신 public_id(UUID)를 넣는다.
+    """
     now = datetime.now(timezone.utc)
     payload = {
-        "sub": str(user_id),  # role 은 넣지 않는다 — 권한은 매 요청 DB 로 확인
+        "sub": public_id,  # role 은 넣지 않는다 — 권한은 매 요청 DB 로 확인
         "iat": now,  # 발급 시각
         "exp": now + timedelta(minutes=settings.jwt_expire_minutes),  # 만료 시각 — 지나면 decode 가 실패한다
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> int | None:
-    """유효하면 user_id, 만료·서명 오류·형식 오류면 None."""
+def decode_access_token(token: str) -> str | None:
+    """유효하면 사용자의 public_id, 만료·서명 오류·형식 오류면 None."""
     try:
         payload = jwt.decode(
             token,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],  # alg 혼동 공격 방지 — 허용 알고리즘 고정
-            options={"require": ["exp", "sub"]},  # 만료 시각·사용자 id 가 없는 토큰은 거부
+            options={"require": ["exp", "sub"]},  # 만료 시각·사용자 식별자(public_id)가 없는 토큰은 거부
         )
-        return int(payload["sub"])  # sub 는 문자열로 저장했으므로 int 로 되돌린다
-    except (jwt.PyJWTError, ValueError, TypeError):
-        # 만료(ExpiredSignatureError)·서명 불일치·형식 오류·sub 가 숫자가 아님 → 모두 '인증 실패' 로 동일 처리
+        return payload["sub"]
+    except jwt.PyJWTError:
+        # 만료(ExpiredSignatureError)·서명 불일치·형식 오류·sub 가 문자열이 아님 → 모두 '인증 실패' 로 동일 처리
         return None
 
 

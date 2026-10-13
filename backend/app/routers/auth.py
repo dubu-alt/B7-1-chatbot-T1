@@ -28,11 +28,8 @@ def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db))
         log_event(new_request_id(), "signup_rate_limited", "WARN", path="/api/auth/signup")
         raise AppError(429)
     user = auth_service.signup(db, body.email, body.password, body.nickname)
-    # 응답에 hashed_password 는 넣지 않는다. created_at 은 +09:00 문자열로 변환
-    return ok(
-        {"id": user.id, "email": user.email, "nickname": user.nickname, "created_at": to_kst_iso(user.created_at)},
-        code=201,
-    )
+    # 응답에 hashed_password·id 는 넣지 않는다 (id 는 가입 순서·가입자 수를 드러냄). created_at 은 +09:00 문자열로 변환
+    return ok({"email": user.email, "nickname": user.nickname, "created_at": to_kst_iso(user.created_at)}, code=201)
 
 
 @router.post("/login")
@@ -72,4 +69,5 @@ def logout(body: RefreshTokenRequest, db: Session = Depends(get_db)):
 @router.get("/me")
 def me(user: User = Depends(get_current_user)):
     """현재 로그인 사용자. 프론트가 새로고침 후 상태 복원·관리자 메뉴 표시 여부(role)에 사용 / 토큰 문제 401"""
-    return ok({"id": user.id, "email": user.email, "nickname": user.nickname, "role": user.role})
+    # id 는 내보내지 않는다 — 일반 사용자가 자기 DB id 를 알 수 없어야 한다
+    return ok({"email": user.email, "nickname": user.nickname, "role": user.role})

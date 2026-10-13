@@ -16,6 +16,7 @@ erDiagram
     users ||--o{ refresh_tokens : "로그인 세션"
     users {
         INTEGER id PK
+        TEXT public_id UK "JWT sub (UUID)"
         TEXT email UK "로그인 ID"
         TEXT hashed_password "bcrypt"
         TEXT nickname "표시 이름 (중복 허용)"
@@ -59,7 +60,8 @@ access token(JWT)은 서버에 저장하지 않는다. **refresh token 만 해�
 
 | 필드 | 타입 | 제약 | 설명 |
 |------|------|------|------|
-| `id` | INTEGER | PK, AUTOINCREMENT | 사용자 식별자. JWT payload `sub` 에 담긴다 |
+| `id` | INTEGER | PK, AUTOINCREMENT | 내부 사용자 식별자. 다른 테이블의 FK 가 이 값을 가리킨다. 일반 사용자에게는 내보내지 않는다 |
+| `public_id` | TEXT | UNIQUE, INDEX, NOT NULL | 바깥용 사용자 식별자(UUID). JWT payload `sub` 에 담긴다. 순차 정수 id 를 토큰에 넣으면 디코드만으로 가입 순서·전체 가입자 수를 유추할 수 있어 무작위 값을 쓴다 |
 | `email` | TEXT | UNIQUE, INDEX, NOT NULL | 로그인 ID. 이메일 형식 검증(Pydantic `EmailStr`) |
 | `hashed_password` | TEXT | NOT NULL | bcrypt 해시(`$2b$...`, 60자). **평문 저장 금지** |
 | `nickname` | TEXT | NOT NULL | 1~20자. 화면 표시용. **중복 허용** |
@@ -165,9 +167,12 @@ WHERE request_id = :request_id ORDER BY id;
 
 SQLAlchemy 모델이 만드는 스키마다. `sqlite3 data/app.db ".schema"` 로 확인할 수 있고, 2026-10-08 로컬 DB 의 네 테이블 컬럼이 아래와 일치함을 확인했다.
 
+> `users.public_id` 는 나중에 추가한 컬럼이다. `create_all` 은 이미 있는 테이블에 컬럼을 추가하지 않으므로, 서버 시작 시 `add_user_public_id`(`app/database.py`)가 기존 DB 에 컬럼을 추가하고 비어 있는 행마다 UUID 를 채운 뒤 `ix_users_public_id` 를 만든다. SQLite 는 기존 테이블에 기본값 없는 NOT NULL 컬럼을 추가할 수 없어, 이렇게 옮겨진 DB 에서는 `public_id` 컬럼이 NULL 허용으로 보이지만 값은 모두 채워져 있다. 배포 직후 이전 형식(정수 `sub`) access token 은 401 이 되지만, refresh token 은 정수 id 와 무관해 그대로 유효하므로 프론트의 자동 재발급으로 새 형식 토큰을 받는다 (로그인 중이던 사용자가 다시 로그인할 필요 없음).
+
 ```sql
 CREATE TABLE users (
 	id INTEGER NOT NULL,
+	public_id TEXT NOT NULL,
 	email TEXT NOT NULL,
 	hashed_password TEXT NOT NULL,
 	nickname TEXT NOT NULL,
@@ -176,6 +181,7 @@ CREATE TABLE users (
 	PRIMARY KEY (id)
 );
 CREATE UNIQUE INDEX ix_users_email ON users (email);
+CREATE UNIQUE INDEX ix_users_public_id ON users (public_id);
 
 CREATE TABLE chat_logs (
 	id INTEGER NOT NULL,
@@ -231,7 +237,8 @@ CREATE INDEX ix_refresh_tokens_expires_at ON refresh_tokens (expires_at);
 |------|------|------|
 | `app/crud/user.py` | `get_by_email(db, email)` | 로그인·중복 검사 |
 | | `create(db, email, hashed_password, nickname, role="user")` | 회원가입 · 관리자 시드 |
-| | `get(db, user_id)` | 토큰 → 사용자 |
+| | `get(db, user_id)` | 정수 id → 사용자 (refresh 재발급 · 관리자 사용자별 대화) |
+| | `get_by_public_id(db, public_id)` | 토큰의 `sub` → 사용자 |
 | | `list_with_stats(db, q, limit, offset)` · `count(db, q)` | 관리자 사용자 목록 |
 | `app/crud/chat_log.py` | `recent_success_for_context(db, user_id, n)` | 컨텍스트용 최근 성공 N턴 |
 | | `create(db, user_id, question, answer, status, error_code, latency_ms, request_id)` | 대화 저장 (성공·실패) |

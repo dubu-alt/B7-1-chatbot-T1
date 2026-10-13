@@ -20,8 +20,8 @@ beforeAll(() => {
   instance.defaults.baseURL = BASE
 })
 
-const USER = { id: 1, email: 'user@example.com', nickname: '테스터', role: 'user' }
-const ADMIN = { id: 2, email: 'admin@example.com', nickname: '관리자님', role: 'admin' }
+const USER = { email: 'user@example.com', nickname: '테스터', role: 'user' }
+const ADMIN = { email: 'admin@example.com', nickname: '관리자님', role: 'admin' }
 
 function mockMe(data: unknown, delayMs = 0) {
   server.use(

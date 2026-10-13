@@ -5,8 +5,13 @@ from app.models import ChatLog, User
 
 
 def get(db: Session, user_id: int) -> User | None:
-    """PK 로 사용자 1명 조회. 없으면 None (토큰의 sub → 사용자)."""
+    """PK 로 사용자 1명 조회. 없으면 None."""
     return db.get(User, user_id)
+
+
+def get_by_public_id(db: Session, public_id: str) -> User | None:
+    """public_id 로 사용자 1명 조회. 없으면 None (토큰의 sub → 사용자)."""
+    return db.scalar(select(User).where(User.public_id == public_id))
 
 
 def get_by_email(db: Session, email: str) -> User | None:

@@ -162,7 +162,12 @@ export interface AdminUserQuery extends PageQuery {
   q?: string
 }
 
-export interface AdminUser extends User {
+/** 관리자 응답의 사용자. 관리자 API 만 사용자 번호(id)를 준다 — 목록 선택·?user= 에 쓴다 */
+export interface AdminUserRef extends User {
+  id: number
+}
+
+export interface AdminUser extends AdminUserRef {
   role: Role
   created_at: string
   chat_count: number
@@ -188,7 +193,7 @@ export interface AdminChat {
 
 /** GET /api/admin/users/{user_id}/chats — 성공·실패 모두 최신순. 없는 사용자는 404 */
 export interface AdminUserChats extends PageResult<AdminChat> {
-  user: User
+  user: AdminUserRef
 }
 
 /** GET /api/admin/failures — status=error 기록, 최신순 */

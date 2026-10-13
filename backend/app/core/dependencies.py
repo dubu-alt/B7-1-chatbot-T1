@@ -31,11 +31,11 @@ def get_current_user(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise AppError(401)
     # ② 토큰 만료·위조·형식 오류
-    user_id = decode_access_token(credentials.credentials)
-    if user_id is None:
+    public_id = decode_access_token(credentials.credentials)
+    if public_id is None:
         raise AppError(401)
-    # ③ 토큰은 유효하지만 사용자가 DB 에 없음 (삭제된 계정 등)
-    user = crud.user.get(db, user_id)
+    # ③ 토큰은 유효하지만 사용자가 DB 에 없음 (삭제된 계정, 이전 형식인 정수 sub 토큰 등)
+    user = crud.user.get_by_public_id(db, public_id)
     if user is None:
         raise AppError(401)
     return user

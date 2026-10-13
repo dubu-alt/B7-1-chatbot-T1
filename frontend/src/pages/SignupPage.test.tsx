@@ -89,7 +89,6 @@ describe('회원가입 — 서버 응답 처리', () => {
         HttpResponse.json({
           code: 201,
           data: {
-            id: 1,
             email: 'user@example.com',
             nickname: '테스터',
             created_at: '2026-09-18T10:00:00+09:00',
@@ -113,7 +112,7 @@ describe('회원가입 — 서버 응답 처리', () => {
         received = await request.json()
         return HttpResponse.json({
           code: 201,
-          data: { id: 1, email: 'user@example.com', nickname: '테스터', created_at: '' },
+          data: { email: 'user@example.com', nickname: '테스터', created_at: '' },
         })
       }),
     )

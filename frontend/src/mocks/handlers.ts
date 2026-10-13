@@ -21,6 +21,7 @@ const REFRESH_TTL_MS = 24 * 60 * 60 * 1000
 const DB_KEY = 'mock:db'
 
 interface MockUser {
+  /** DB 의 사용자 번호 역할. 관리자 응답에만 내보내고 회원가입·내 정보 응답에는 넣지 않는다 (docs/03-api.md 1절) */
   id: number
   email: string
   password: string
@@ -260,7 +261,6 @@ export const handlers = [
     return HttpResponse.json({
       code: 201,
       data: {
-        id: user.id,
         email: user.email,
         nickname: user.nickname,
         created_at: user.createdAt,
@@ -318,7 +318,7 @@ export const handlers = [
 
     return HttpResponse.json({
       code: 200,
-      data: { id: user.id, email: user.email, nickname: user.nickname, role: user.role },
+      data: { email: user.email, nickname: user.nickname, role: user.role },
     })
   }),
 

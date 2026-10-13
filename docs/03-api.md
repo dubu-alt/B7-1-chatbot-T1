@@ -29,7 +29,7 @@ Authorization: Bearer <access_token>
 
 | 토큰 | 형식 | 수명 | 서버 저장 | 용도 |
 |------|------|------|-----------|------|
-| `access_token` | JWT (`sub`=user_id, `exp`) | `JWT_EXPIRE_MINUTES` = **15분** | 저장 안 함 | 모든 인증 API 의 `Authorization` 헤더 |
+| `access_token` | JWT (`sub`=사용자 public_id(UUID), `exp`) | `JWT_EXPIRE_MINUTES` = **15분** | 저장 안 함 | 모든 인증 API 의 `Authorization` 헤더 |
 | `refresh_token` | 무작위 문자열 (`secrets.token_urlsafe`) | `REFRESH_TOKEN_EXPIRE_DAYS` = **1일** (재발급마다 새 토큰이 다시 1일) | **SHA-256 해시로 `refresh_tokens` 테이블에 저장** | `POST /api/auth/refresh` 로 새 토큰 발급 · `POST /api/auth/logout` 으로 폐기 |
 
 - 응답의 `expires_in` / `refresh_expires_in` 은 초 단위
@@ -52,7 +52,7 @@ type ApiResponse = {
 
 **성공**
 ```json
-{ "code": 201, "data": { "id": 1, "email": "user@example.com", "nickname": "어썸체크", "created_at": "2026-09-14T10:00:00+09:00" } }
+{ "code": 201, "data": { "email": "user@example.com", "nickname": "어썸체크", "created_at": "2026-09-14T10:00:00+09:00" } }
 ```
 
 **실패**
@@ -130,7 +130,7 @@ POST /api/auth/signup
 ```json
 {
   "code": 201,
-  "data": { "id": 1, "email": "user@example.com", "nickname": "어썸체크", "created_at": "2026-09-14T10:00:00+09:00" }
+  "data": { "email": "user@example.com", "nickname": "어썸체크", "created_at": "2026-09-14T10:00:00+09:00" }
 }
 ```
 
@@ -186,7 +186,7 @@ POST /api/auth/login
 
 | 필드 | 의미 |
 |------|------|
-| `access_token` | JWT. payload 에 `sub`(user_id), `exp` 포함 |
+| `access_token` | JWT. payload 에 `sub`(사용자 public_id — UUID 문자열, 정수 id 아님), `exp` 포함 |
 | `refresh_token` | 무작위 문자열. 서버는 **해시만** `refresh_tokens` 에 저장 |
 | `token_type` | 항상 `bearer` |
 | `expires_in` | access token 만료까지 남은 초. `JWT_EXPIRE_MINUTES × 60` |
@@ -216,8 +216,10 @@ Authorization: Bearer <token>
 
 **Response**
 ```json
-{ "code": 200, "data": { "id": 1, "email": "user@example.com", "nickname": "어썸체크", "role": "user" } }
+{ "code": 200, "data": { "email": "user@example.com", "nickname": "어썸체크", "role": "user" } }
 ```
+
+> 회원가입·내 정보 조회 응답에는 사용자 `id` 를 넣지 않는다. 순차 정수 id 를 알면 가입 순서와 전체 가입자 수를 유추할 수 있어서다. 사용자 id 는 관리자 API 에서만 쓴다.
 
 **실패**: `401`
 
@@ -536,7 +538,7 @@ GET /api/admin/requests/{request_id}/logs
 
 | 테이블 | 필드 |
 |--------|------|
-| `users` | id · email UNIQUE · hashed_password · nickname · **role**(user/admin) · created_at |
+| `users` | id · public_id UNIQUE · email UNIQUE · hashed_password · nickname · **role**(user/admin) · created_at |
 | `chat_logs` | id · **user_id** · **question** · **answer**(실패 시 NULL) · status · error_code · latency_ms · request_id · **created_at** |
 | `server_logs` | id · request_id · level · event · user_id · detail · created_at |
 | `refresh_tokens` | id · user_id · token_hash(SHA-256) UNIQUE · expires_at · created_at |

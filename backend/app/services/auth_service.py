@@ -44,19 +44,19 @@ def signup(db: Session, email: str, password: str, nickname: str) -> User:
 LOGIN_FAILED_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다."
 
 
-def _issue_tokens(db: Session, user_id: int, commit: bool = True) -> dict:
+def _issue_tokens(db: Session, user: User, commit: bool = True) -> dict:
     """access token 발급 + refresh token 생성·해시 저장. 응답 data 형태로 반환한다."""
     refresh = new_refresh_token()  # 원문은 응답으로만 내보내고
     crud.refresh_token.create(  # DB 에는 해시만 저장한다
         db,
-        user_id=user_id,
+        user_id=user.id,  # DB 안에서는 정수 id 로 연결한다
         token_hash=hash_refresh_token(refresh),
         expires_at=utcnow() + timedelta(days=settings.refresh_token_expire_days),
         commit=commit,  # 재발급(회전)에서는 False 로 받아 기존 행 삭제와 한 트랜잭션으로 묶는다
     )
     # 03-api 로그인 응답 data 형태. expires_in 은 초 단위
     return {
-        "access_token": create_access_token(user_id),
+        "access_token": create_access_token(user.public_id),  # 바깥으로 나가는 토큰에는 public_id
         "refresh_token": refresh,
         "token_type": "bearer",
         "expires_in": settings.jwt_expire_minutes * 60,
@@ -73,7 +73,7 @@ def login(db: Session, email: str, password: str) -> dict:
         raise AppError(401, LOGIN_FAILED_MESSAGE)
     if not verify_password(password, user.hashed_password):
         raise AppError(401, LOGIN_FAILED_MESSAGE)
-    return _issue_tokens(db, user.id)
+    return _issue_tokens(db, user)
 
 
 def refresh(db: Session, refresh_token: str) -> dict:
@@ -82,12 +82,12 @@ def refresh(db: Session, refresh_token: str) -> dict:
     row = crud.refresh_token.get_valid(db, token_hash, utcnow())
     if row is None:  # 없음·만료·이미 회전/로그아웃으로 폐기됨 → 다시 로그인 필요
         raise AppError(401)
-    user_id = row.user_id  # 행을 지우기 전에 소유자 id 를 보관
+    user = crud.user.get(db, row.user_id)  # 행을 지우기 전에 소유자를 보관 (새 access token 에 public_id 필요)
     # 동시에 같은 토큰으로 두 번 요청하면 한쪽만 삭제에 성공한다 → 나머지는 401
     if crud.refresh_token.delete(db, token_hash, commit=False) != 1:
         db.rollback()
         raise AppError(401)
-    tokens = _issue_tokens(db, user_id, commit=False)  # 새 refresh 행 추가 (아직 commit 안 함)
+    tokens = _issue_tokens(db, user, commit=False)  # 새 refresh 행 추가 (아직 commit 안 함)
     db.commit()  # 삭제 + 추가를 한 번에 확정 → 중간에 실패하면 둘 다 반영되지 않는다
     return tokens
 
