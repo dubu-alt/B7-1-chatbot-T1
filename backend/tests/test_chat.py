@@ -6,6 +6,7 @@
 
 import asyncio
 import json
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -17,6 +18,7 @@ from sqlalchemy.exc import OperationalError
 
 from app import crud
 from app.config import settings
+from app.database import engine
 from app.models import ChatLog, ServerLog
 from app.services import ai_service
 from app.core.rate_limit import chat_limiter
@@ -317,3 +319,56 @@ def test_chat_rate_limit(client, fake_ai, user_h, db):
     signup(client, email="other@example.com")
     other_h = auth_header(login(client, email="other@example.com")["data"]["access_token"])
     assert _ask(client, other_h, "다른 사용자")["code"] == 200
+
+
+def test_db_lock_does_not_freeze_event_loop(client, fake_ai, user_h):
+    """DB 쓰기 잠금 때문에 챗 저장이 기다리는 동안에도 이벤트 루프는 멈추지 않는다.
+
+    챗 API 는 async def 라 그 안의 동기 DB 작업(조회·저장·서버 로그)이 이벤트 루프에서 돌면,
+    SQLite 잠금을 기다리는 동안(최대 5초) 서버 전체가 다른 요청을 처리하지 못한다.
+    """
+    fake_ai.mode = "slow"  # AI 가 1초 뒤 응답 → 응답이 왔을 때 DB 는 잠겨 있다
+    result = {}
+
+    def hold_write_lock(locked: threading.Event):
+        conn = sqlite3.connect(engine.url.database, isolation_level=None)
+        conn.execute("BEGIN IMMEDIATE")  # 다른 연결의 쓰기를 막는 잠금
+        locked.set()
+        time.sleep(2)
+        conn.execute("COMMIT")
+        conn.close()
+
+    async def scenario():
+        stall = 0.0
+        done = False
+
+        async def ticker():  # 루프가 멈추면 sleep(0.01) 이 늦게 깨어난다 → 가장 오래 늦은 시간을 잰다
+            nonlocal stall
+            while not done:
+                started = time.perf_counter()
+                await asyncio.sleep(0.01)
+                stall = max(stall, time.perf_counter() - started - 0.01)
+
+        transport = httpx.ASGITransport(app=client.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+            chats = [
+                asyncio.create_task(c.post("/api/chat", json={"message": f"질문 {i}"}, headers=user_h))
+                for i in range(5)
+            ]
+            await asyncio.sleep(0.3)  # 챗 요청들이 AI 응답을 기다리는 중
+            locked = threading.Event()
+            threading.Thread(target=hold_write_lock, args=(locked,), daemon=True).start()
+            await asyncio.to_thread(locked.wait)
+            watcher = asyncio.create_task(ticker())
+            result["chat_codes"] = [r.json()["code"] for r in await asyncio.gather(*chats)]
+            done = True
+            await watcher
+        result["stall"] = stall
+
+    worker = threading.Thread(target=lambda: asyncio.run(scenario()), daemon=True)
+    worker.start()
+    worker.join(timeout=20)
+
+    assert not worker.is_alive(), "20초 안에 끝나지 않음"
+    assert result["chat_codes"] == [200] * 5  # 잠금이 풀린 뒤 모두 저장된다
+    assert result["stall"] < 0.5, f"이벤트 루프가 {result['stall']:.2f}초 멈춤"

@@ -5,6 +5,7 @@
 request_received → ai_call_start → ai_call_success / ai_call_failed → db_save_success / db_save_failed
 """
 
+import asyncio
 import time
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -46,27 +47,33 @@ async def answer(db: Session, user: User, question: str) -> ChatLog:
     관리자 화면의 'AI 실패 기록'은 이 저장분으로 만들어지므로, 실패 저장을 빼먹으면 그 화면이 비게 된다.
     """
     request_id = new_request_id()
-    log_event(request_id, "request_received", user_id=user.id, path="/api/chat")
+    # 아래 DB 작업(조회·저장·서버 로그)은 동기 코드라 별도 스레드에서 실행한다. 이 함수는 이벤트 루프에서 돌기 때문에,
+    # 그대로 부르면 SQLite 잠금을 기다리는 동안(최대 5초) 서버 전체가 다른 요청을 처리하지 못한다
+    await asyncio.to_thread(log_event, request_id, "request_received", user_id=user.id, path="/api/chat")
 
     # 컨텍스트: 이 사용자(토큰의 user.id)의 최근 성공 Q/A 만, 오래된 순으로. 실패 기록은 답이 없으므로 제외된다
-    history = crud.chat_log.recent_success_for_context(db, user.id, settings.ai_context_turns)
+    history = await asyncio.to_thread(crud.chat_log.recent_success_for_context, db, user.id, settings.ai_context_turns)
     messages = ai_service.build_messages(history, question)
 
-    log_event(request_id, "ai_call_start", user_id=user.id, context_turns=len(history))
+    await asyncio.to_thread(log_event, request_id, "ai_call_start", user_id=user.id, context_turns=len(history))
     started = time.perf_counter()
     try:
         reply = await ai_service.ask(messages)
     except ai_service.AIError as exc:
         latency_ms = _elapsed_ms(started)
-        log_event(request_id, "ai_call_failed", "ERROR", user.id, reason=exc.reason, latency_ms=latency_ms)
-        _save(db, request_id, user.id, question=question, answer=None, status="error",
-              error_code=exc.error_code, latency_ms=latency_ms)  # 실패 저장까지 실패해도 사용자에게는 AI 실패를 알린다
+        await asyncio.to_thread(
+            log_event, request_id, "ai_call_failed", "ERROR", user.id, reason=exc.reason, latency_ms=latency_ms
+        )
+        await asyncio.to_thread(_save, db, request_id, user.id, question=question, answer=None, status="error",
+                                error_code=exc.error_code, latency_ms=latency_ms)  # 실패 저장까지 실패해도 사용자에게는 AI 실패를 알린다
         # 타임아웃은 504, 그 밖의 실패는 502. 안내 문구는 core/responses.py 의 기본 문구를 쓴다
         raise AppError(504 if exc.error_code == ai_service.AI_TIMEOUT else 502) from None
 
     latency_ms = _elapsed_ms(started)
-    log_event(request_id, "ai_call_success", user_id=user.id, latency_ms=latency_ms)
-    log = _save(db, request_id, user.id, question=question, answer=reply, status="success", latency_ms=latency_ms)
+    await asyncio.to_thread(log_event, request_id, "ai_call_success", user_id=user.id, latency_ms=latency_ms)
+    log = await asyncio.to_thread(
+        _save, db, request_id, user.id, question=question, answer=reply, status="success", latency_ms=latency_ms
+    )
     if log is None:
         # 답은 받았지만 저장하지 못함 — 저장되지 않은 답을 보여주면 '내 대화 로그'와 어긋나므로 500 으로 알린다
         raise AppError(500)

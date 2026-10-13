@@ -1,5 +1,7 @@
 """챗 API — POST /api/chat (03-api 2절)."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -27,7 +29,7 @@ async def chat(
     """로그인한 사용자의 질문에 AI 답변을 돌려준다. AI 실패는 504(타임아웃)·502(그 밖의 실패), 횟수 초과는 429."""
     # 한 사용자가 질문을 계속 보내 AI 비용을 쓰고 서버를 느리게 하는 것을 막는다 (S01). 막힌 요청은 AI 를 부르지 않는다
     if not chat_limiter.try_acquire(str(user.id)):
-        log_event(new_request_id(), "rate_limited", "WARN", user.id, path="/api/chat")
+        await asyncio.to_thread(log_event, new_request_id(), "rate_limited", "WARN", user.id, path="/api/chat")
         raise AppError(429)
     log = await chat_service.answer(db, user, body.message)
     return ok(
