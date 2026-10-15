@@ -88,9 +88,9 @@
 | 요구 | 상태 | 수행 방법 |
 |------|:----:|-----------|
 | 브랜치 전략 (main/develop) | ✅ | main·develop 분리. **main 은 보호 규칙(PR 리뷰 필수)**, develop 은 보호 없음(2026-10-08 확인) ([09-team.md 2-1. 브랜치](09-team.md#2-1-브랜치)) |
-| 기능 단위 작업 브랜치 흔적 | ✅ | `feature/setup`, `feature/fe-setup`, 프론트 `feature/fe-*`·`refactor/fe-*`·`fix/fe-*` / 백엔드: `chore/be-init`, `feature/be-db`, `feature/be-auth-jwt`, `feature/be-logs`, `feature/be-chat`, `feature/be-server-logs`, `feature/be-admin` |
-| PR 기반 Merge 기록 | ✅ | 머지된 PR 40건(2026-10-08) — 백엔드 9건(#15~#74), 프론트 28건(#4~#81), 초기 3건(#2~#9) |
-| 팀원별 유의미한 커밋 10회 이상 | ✅ | 성원모 56회 · 이성준 106회 (2026-10-10 develop, 머지 커밋 제외 `git shortlog -sn --no-merges`) |
+| 기능 단위 작업 브랜치 흔적 | ✅ | `feature/setup`, `feature/fe-setup`, 프론트 `feature/fe-*`·`refactor/fe-*`·`fix/fe-*` / 백엔드: `chore/be-init`, `feature/be-db`, `feature/be-auth-jwt`, `feature/be-logs`, `feature/be-chat`, `feature/be-server-logs`, `feature/be-admin`, `feature/be-rate-limit`, `feature/be-docs-toggle`, `feature/be-body-limit`, `feature/be-jwt-key-strength`, `fix/be-concurrent-chat`, `fix/be-admin-seed-demote`, `fix/be-chat-db-thread`, `fix/be-hide-user-id`, `fix/be-hide-chat-id` |
+| PR 기반 Merge 기록 | ✅ | 머지된 PR 56건(2026-10-14 main) — 백엔드 17건(#15~#107), 프론트 32건(#4~#109), 초기 3건(#2·#3·#9), develop → main 반영 4건(#96·#102·#105·#110) |
+| 팀원별 유의미한 커밋 10회 이상 | ✅ | 성원모 69회 · 이성준 111회 (2026-10-14 main, 머지 커밋 제외 `git shortlog -sn --no-merges`) |
 
 ### mission 5·6. 개발 환경 / 제약 사항
 
@@ -115,18 +115,18 @@
 
 | 항목 | features.md | 상태 |
 |------|-------------|:----:|
-| 앱 기본 구성·공통 응답 봉투·CORS | B1 | ✅ #10·PR #15 (V22·V23 통과) |
+| 앱 기본 구성·공통 응답 봉투·CORS | B1 | ✅ #10·PR #15 (V22·V23 통과) + 운영에서 API 문서 화면 끄기(#90·PR #91) · 요청 본문 64KB 상한 413(#92·PR #93) · 서명 키 32바이트 미만이면 시작 거부(#94·PR #95) |
 | DB 모델 (users·chat_logs·server_logs) | B2 | ✅ #11·PR #17 (+ refresh_tokens) |
-| 회원가입 API | B3 | ✅ #16·PR #25 |
-| 로그인·재발급·로그아웃 API (access·refresh token) | B4 | ✅ #16·PR #25 (만료 행 정리 스케줄러 포함) |
-| 현재 사용자 API (role) | B5 | ✅ #16·PR #25 |
+| 회원가입 API | B3 | ✅ #16·PR #25 + 가입 IP 별 횟수 제한 429(#86·PR #87) · 응답에서 `id` 제거(#99·PR #101) |
+| 로그인·재발급·로그아웃 API (access·refresh token) | B4 | ✅ #16·PR #25 (만료 행 정리 스케줄러 포함) + 로그인 실패 횟수 제한 429(#86·PR #87) · JWT `sub` 를 UUID(public_id)로(#99·PR #101) |
+| 현재 사용자 API (role) | B5 | ✅ #16·PR #25 (응답에서 `id` 제거 #99·PR #101) |
 | 인증 dependency | B6 | ✅ #16·PR #25 |
-| 챗 API | B7 | ✅ #61·PR #62 |
+| 챗 API | B7 | ✅ #61·PR #62 + 사용자별 1분 10회 제한 429(#86·PR #87) · DB 작업 별도 스레드(#97·PR #98) · `chat_id` UUID(#106·PR #107) |
 | AI 클라이언트 (Codyssey) | B8 | ✅ #61·PR #62 |
 | 실패 처리 504/502 + 실패 저장 | B9 | ✅ #61·PR #62 |
 | 컨텍스트 유지 | B10 | ✅ #61·PR #62 |
 | 입력 검증 422 | B11 | ✅ #61·PR #62 |
-| 내 로그 조회 API | B12 | ✅ #58·PR #59 |
+| 내 로그 조회 API | B12 | ✅ #58·PR #59 (`chat_id` UUID #106·PR #107) |
 | 서버 로그 (+ `server_logs`) | B13 | ✅ #64·PR #65 (관리자 감사 로그 `admin_access`/`admin_forbidden` 은 B15 에서) |
 | 확인용 SQL | B14 | ✅ #11·PR #17 (`scripts/check_logs.sql`) |
 | 관리자 권한·시드·감사 로그 | B15 | ✅ `require_admin`·관리자 시드(#16·PR #25) + 감사 로그 `admin_access`/`admin_forbidden`(#66·PR #67, V38 통과) + 시드 보강 — 이전 관리자 강등·비밀번호 `ADMIN_PASSWORD` 동기화(#84·PR #85) |
@@ -166,10 +166,10 @@
 | 배포 및 실행 방법 | ✅ | docs/06 (Railway, 외부망·CORS 확인) |
 | 환경변수 키 목록 | ✅ (문서) | [06-deployment.md 3. 환경변수](06-deployment.md#3-환경변수) |
 | 팀 역할 및 개인별 작업 요약 | 🟡 | docs/09 |
-| 기능 단위 작업 브랜치 흔적 | ✅ | feature/setup, feature/fe-setup, 프론트 feature/fe-* 등, 백엔드 feature/be-* 6개·chore/be-init |
-| PR 기반 머지 기록 | ✅ | 머지된 PR 40건 (위 4-7 참고) |
-| 성원모 — 커밋 10회 이상 | ✅ | 56회 (2026-10-10 develop, 머지 커밋 제외 `git shortlog -sn --no-merges`) |
-| 이성준 — 커밋 10회 이상 | ✅ | 106회 (2026-10-10 develop, 같은 기준) |
+| 기능 단위 작업 브랜치 흔적 | ✅ | feature/setup, feature/fe-setup, 프론트 feature/fe-* 등, 백엔드 feature/be-* 10개·fix/be-* 5개·chore/be-init |
+| PR 기반 머지 기록 | ✅ | 머지된 PR 56건 (위 4-7 참고) |
+| 성원모 — 커밋 10회 이상 | ✅ | 69회 (2026-10-14 main, 머지 커밋 제외 `git shortlog -sn --no-merges`) |
+| 이성준 — 커밋 10회 이상 | ✅ | 111회 (2026-10-14 main, 같은 기준) |
 
 ---
 

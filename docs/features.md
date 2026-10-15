@@ -17,7 +17,7 @@
 | 프론트 언어 | **TypeScript (`strict: true`)** — 근거: [12-decisions.md 14. 프론트엔드 TypeScript (strict)](12-decisions.md#14-프론트엔드-typescript-strict) |
 | AI API | **Codyssey AI API (COPA)** — [02-architecture.md 6. Codyssey AI API 연동 메모](02-architecture.md#6-codyssey-ai-api-연동-메모) |
 | 응답 형식 | **`{code, data}`, HTTP 항상 200** — 실패는 `data.message` ([03-api.md 0. 공통 규약](03-api.md#0-공통-규약)) |
-| 결과 코드 | 401 로그인 실패·인증 없음 / 403 관리자 아님 / 404 / 409 이메일 중복 / **422 입력 검증** / 500 / **502 AI 호출 실패** / **504 AI 타임아웃** |
+| 결과 코드 | 401 로그인 실패·인증 없음 / 403 관리자 아님 / 404 / 409 이메일 중복 / **413 요청 본문 64KB 초과** / **422 입력 검증** / **429 요청 횟수 초과** / 500 / **502 AI 호출 실패** / **504 AI 타임아웃** |
 | 관리자 기능 | **필수 채택** — mission 2-2절 "관리자/내부 로그 확인 화면"(47줄), 4-4절 "관리자 조회 API/화면"(92줄). `role=admin` 은 `.env` 시드로만, 조회 전용 (B15~B19, F10~F14) |
 | 배포 방식 | **Railway 서비스 2개** — 프론트·백엔드 별도 도메인, 백엔드 CORS 필수, SQLite 는 Volume `/data` |
 
@@ -27,18 +27,18 @@
 
 | # | 기능 | 세부 | mission 근거 |
 |---|------|------|--------------|
-| B1 | 앱 기본 구성 | 설정 로딩(`.env`), SQLite 연결, CORS(개발 + Railway 프론트 도메인), **공통 응답 봉투·예외 핸들러**(422/404/405/500 도 `{code, data}`) | 5절, 6절 |
-| B2 | DB 모델 | `users`(role), `chat_logs`(status·error_code·latency_ms·request_id), `server_logs` (아래 [3. DB 구조](#3-db-구조)) | 4-4절 |
-| B3 | 회원가입 API | `POST /api/auth/signup` — email 중복 체크(409), 닉네임 중복 허용, bcrypt 해시 저장, role=user | 4-2절 |
-| B4 | 로그인·재발급·로그아웃 API | `POST /api/auth/login` — access(JWT)·refresh token 발급, refresh 는 해시로 `refresh_tokens` 저장, 실패 401 · `POST /api/auth/refresh` — 재발급(회전) · `POST /api/auth/logout` — refresh 행 삭제 · 만료 행 정리 스케줄러(시작 시 + 24시간마다). access 15분 / refresh 1일 | 4-2절 |
-| B5 | 현재 사용자 API | `GET /api/auth/me` — 로그인 상태 복원, `role` 포함 | 4-2절 |
+| B1 | 앱 기본 구성 | 설정 로딩(`.env`), SQLite 연결, CORS(개발 + Railway 프론트 도메인), **공통 응답 봉투·예외 핸들러**(422/404/405/500 도 `{code, data}`), 요청 본문 64KB 상한(413), API 문서 화면은 `ENABLE_DOCS=true` 일 때만, `JWT_SECRET_KEY` 가 32바이트 미만이면 서버 시작 거부 | 5절, 6절 |
+| B2 | DB 모델 | `users`(role·public_id), `chat_logs`(status·error_code·latency_ms·request_id·public_id), `server_logs`, `refresh_tokens` (아래 [3. DB 구조](#3-db-구조)) | 4-4절 |
+| B3 | 회원가입 API | `POST /api/auth/signup` — email 중복 체크(409), 닉네임 중복 허용, bcrypt 해시 저장, role=user, 응답에 `id` 없음, 가입 IP 별 10분 20회(429) | 4-2절 |
+| B4 | 로그인·재발급·로그아웃 API | `POST /api/auth/login` — access(JWT)·refresh token 발급, refresh 는 해시로 `refresh_tokens` 저장, 실패 401 · `POST /api/auth/refresh` — 재발급(회전) · `POST /api/auth/logout` — refresh 행 삭제 · 만료 행 정리 스케줄러(시작 시 + 24시간마다). access 15분 / refresh 1일. JWT `sub` 는 사용자 `public_id`(UUID). 로그인 실패 이메일별 10분 5회·IP 별 20회 넘으면 429 | 4-2절 |
+| B5 | 현재 사용자 API | `GET /api/auth/me` — 로그인 상태 복원, `role` 포함 (`id` 는 내보내지 않음) | 4-2절 |
 | B6 | 접근 제어 | `get_current_user` 의존성, 비로그인 시 `/api/chat`, `/api/me/*`, `/api/admin/*` → 401 | 4-2절 |
-| B7 | 챗 API | `POST /api/chat` — 수신 → 검증 → 컨텍스트 구성 → AI 호출 → DB 저장 → 응답 | 4-3절 |
+| B7 | 챗 API | `POST /api/chat` — 수신 → 검증 → 횟수 제한(사용자별 1분 10회, 429) → 컨텍스트 구성 → AI 호출 → DB 저장 → 응답. DB 작업은 별도 스레드(`asyncio.to_thread`), 응답 `chat_id` 는 대화 `public_id`(UUID) | 4-3절 |
 | B8 | AI 클라이언트 | `httpx.AsyncClient`, `COPA_API_KEY` 서버 환경변수 전용, 호출 전체 30초 타임아웃 | 4-3절, 6절 |
 | B9 | 실패 처리 | 타임아웃 → 504 / 기타 → 502, `data.message` 안내, **실패도 `chat_logs` 에 status=error 저장**, 서버 유지, **서버 자동 재시도 없음** | 4-5절, 6절 |
 | B10 | 컨텍스트 유지 | 동일 사용자 최근 N턴(`AI_CONTEXT_TURNS`) **성공** Q/A 를 messages 에 포함 | 4-3절 |
-| B11 | 입력 검증 | 빈 입력/공백 차단, 최대 1000자, 이메일 형식, 비밀번호 8자+, 닉네임 1~20 → 422 | 4-5절 |
-| B12 | 내 로그 조회 API | `GET /api/me/chats` — 토큰 사용자 기준, 성공 기록, `{total, items}` | 4-4절, 2-2절 |
+| B11 | 입력 검증 | 빈 입력/공백 차단, 최대 1000자, 이메일 형식, 비밀번호 8~128자, 닉네임 1~20 → 422 | 4-5절 |
+| B12 | 내 로그 조회 API | `GET /api/me/chats` — 토큰 사용자 기준, 성공 기록, `{total, items}`, `chat_id` 는 UUID | 4-4절, 2-2절 |
 | B13 | 서버 로그 | 4개 이벤트 필수 기록 + `request_id`, **파일/콘솔과 `server_logs` 테이블에 함께 저장** (아래 [4. API 요약](#4-api-요약)) | 4-5절, 6절 |
 | B14 | 확인용 SQL | `scripts/check_logs.sql` — 사용자별·최근 대화·요청 흐름 조회 | 2-2절 |
 | B15 | 관리자 권한·시드 | `users.role`, `require_admin`(DB role 확인, 403), 시작 시 `ADMIN_EMAIL`/`ADMIN_PASSWORD` 로 생성·승격(그 외 관리자는 `user` 로 강등, 비밀번호는 `ADMIN_PASSWORD` 로 맞춤), 감사 로그 `admin_access`/`admin_forbidden` | 2-2절, 4-4절 |
@@ -76,7 +76,8 @@
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| id | INTEGER PK | 사용자 식별자 |
+| id | INTEGER PK | 사용자 식별자 (내부용, 관리자 API 에서만 노출) |
+| public_id | TEXT UNIQUE | 외부에 보이는 식별자 (UUID) — JWT `sub` |
 | email | TEXT UNIQUE | 로그인 ID |
 | hashed_password | TEXT | bcrypt 해시 |
 | nickname | TEXT | 표시 이름 (중복 허용) |
@@ -87,7 +88,8 @@
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| id | INTEGER PK | 로그 식별자 |
+| id | INTEGER PK | 로그 식별자 (내부용, 관리자 API 의 `chat_id`) |
+| public_id | TEXT UNIQUE | 일반 사용자 API 의 `chat_id` (UUID) |
 | user_id | INTEGER FK → users.id | 사용자 식별 (필수 추적 필드) |
 | question | TEXT | 사용자 질문 (필수 추적 필드) |
 | answer | TEXT NULL | AI 응답 (필수 추적 필드, 실패 시 NULL) |
@@ -150,7 +152,9 @@
 | 관리자 아님 | 403 |
 | 대상 없음 | 404 |
 | 이메일 중복 | 409 |
+| 요청 본문 64KB 초과 | 413 |
 | 입력 검증 실패 | 422 |
+| 요청 횟수 초과 (챗·로그인 실패·가입) | 429 |
 | AI 호출 실패 | 502 |
 | AI 타임아웃 | 504 |
 
@@ -170,7 +174,7 @@
 
 | # | 항목 | mission 근거 |
 |---|------|--------------|
-| C1 | 저장소 구조 `backend/`, `frontend/`, `.env` 예시 파일(백엔드 `.env.example`, 프론트 `.env.development.example`·`.env.production.example`), 루트 `.gitignore`(`.env`, `node_modules`, `*.db`, `.venv`, `dist`) | 6절 |
+| C1 | 저장소 구조 `backend/`, `frontend/`, `.env` 예시 파일(프론트 `.env.development.example`·`.env.production.example`. 백엔드는 예시 파일 없이 [06-deployment.md 3. 환경변수](06-deployment.md#3-환경변수) 키 목록이 기준), 루트 `.gitignore`(`.env`, `node_modules`, `*.db`, `.venv`, `dist`) | 6절 |
 | C2 | 배포 — Railway 프론트 URL 로 외부 네트워크 접속, 백엔드 CORS·Volume 설정 | 2-1절, 4-6절 |
 | C3 | README — 개요 / 구조 / API 명세(예시) / DB 구조 / 실행(백·프론트) / 환경변수 / 팀 역할 / 민감정보 관리 | 2-2절 |
 | C4 | Git — `main`/`develop`/`feature/*`, PR merge, 팀원별 커밋 10회 이상, 문서-이력 일치 | 4-7절 |

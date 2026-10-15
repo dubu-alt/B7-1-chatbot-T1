@@ -89,12 +89,12 @@ flowchart TD
 │   │   ├── main.py              # FastAPI 앱, CORS, 라우터 등록, 예외 핸들러(공통 봉투), 관리자 시드
 │   │   ├── config.py            # 환경변수 로딩 (pydantic-settings)
 │   │   ├── database.py          # 엔진·세션·Base·get_db (SQLite 파일 DB 는 NullPool)
-│   │   ├── models/              # SQLAlchemy 모델 (user.py, chat_log.py, server_log.py)
-│   │   ├── schemas/             # Pydantic 스키마 (auth.py, chat.py, admin.py, common.py)
+│   │   ├── models/              # SQLAlchemy 모델 (user.py, chat_log.py, server_log.py, refresh_token.py)
+│   │   ├── schemas/             # Pydantic 요청 스키마 (auth.py, chat.py) — 조회 전용 API 는 응답을 라우터에서 필요한 필드만 골라 만든다
 │   │   ├── routers/             # auth.py, chat.py, me.py, admin.py
-│   │   ├── services/            # auth_service.py, ai_service.py, admin_service.py
+│   │   ├── services/            # auth_service.py, chat_service.py, ai_service.py
 │   │   ├── crud/                # user.py, chat_log.py, server_log.py, refresh_token.py
-│   │   └── core/                # security.py, dependencies.py, logging.py, responses.py, rate_limit.py, body_limit.py
+│   │   └── core/                # security.py, dependencies.py, logging.py, responses.py, timeutil.py, rate_limit.py, body_limit.py
 │   ├── scripts/check_logs.sql
 │   └── requirements.txt
 ├── frontend/
@@ -148,10 +148,10 @@ flowchart TD
 |------|------|
 | **React SPA** | 화면 렌더링, 토큰 보관, 입력 1차 검증, 라우팅 가드(로그인·관리자) |
 | **frontend 서비스** | 빌드 결과(`dist`) 정적 서빙. API 는 거치지 않음 |
-| **미들웨어** | CORS 허용 Origin 검사, `request_id` 발급, `request_received` 로그 |
+| **미들웨어** | CORS 허용 Origin 검사, 요청 본문 크기 상한(64KB 넘으면 413) |
 | **라우터** | HTTP 엔드포인트 정의, 인증·관리자 dependency 적용, 스키마 바인딩. **DB 를 직접 건드리지 않음** |
-| **서비스 계층** | 비즈니스 로직 — 비밀번호 해싱·검증, JWT 발급, 컨텍스트 구성, AI 호출과 예외 처리, 관리자 집계 |
-| **CRUD 계층** | DB 질의 전담 |
+| **서비스 계층** | 비즈니스 로직 — 비밀번호 해싱·검증, JWT 발급, `request_id` 발급·단계별 로그, 컨텍스트 구성, AI 호출과 예외 처리 |
+| **CRUD 계층** | DB 질의 전담 (관리자 통계·목록 집계 포함 — 관리자 API 는 조회만 하므로 서비스 없이 라우터 → CRUD) |
 | **SQLite (Volume)** | 사용자·대화 로그·서버 로그 영속 저장 |
 | **Codyssey AI API** | 외부 AI 응답 생성. **키는 서버 환경변수에만 존재** |
 
@@ -161,20 +161,20 @@ flowchart TD
 | `app/core/responses.py` | `ok(data, code=200)` / `fail(code, message)` — 공통 봉투 생성 |
 | `app/config.py` | `.env` → `Settings`. 비밀값은 코드에 기본값을 두지 않음 |
 | `app/database.py` | 엔진/세션 팩토리, `PRAGMA foreign_keys=ON`, `get_db` 의존성. SQLite 파일 DB 는 연결 풀 없이(NullPool) — 동시 챗 요청에서 풀이 바닥나 서버가 멈추던 문제 대응(PR #74) |
-| `app/models/` | `User`(role), `ChatLog`(status·error_code·latency_ms·request_id), `ServerLog` |
-| `app/schemas/` | 요청 스키마 + 응답 `data` 스키마 |
-| `app/core/security.py` | bcrypt 해시·검증, JWT 인코드·디코드 |
+| `app/models/` | `User`(role·public_id), `ChatLog`(status·error_code·latency_ms·request_id·public_id), `ServerLog`, `RefreshToken`. `public_id` 는 일반 사용자에게 보여 주는 UUID — 내부 PK·FK 는 정수 id 그대로 |
+| `app/schemas/` | 요청 스키마(가입·로그인·재발급·질문). 검증 실패는 자동 422 |
+| `app/core/security.py` | bcrypt 해시·검증, JWT 인코드·디코드 (`sub` = 사용자 `public_id`) |
 | `app/core/dependencies.py` | `get_current_user` (Bearer → 사용자, 실패 401) · `require_admin` (DB role 확인, 실패 403) |
 | `app/core/logging.py` | 구조화 로그 포맷, `request_id`, 이벤트를 파일/콘솔 + `server_logs` 에 기록 |
 | `app/core/rate_limit.py` | 요청 횟수 제한(429) — 챗 사용자별 · 로그인 실패 이메일/IP 별 · 가입 IP 별 메모리 카운터, 실제 IP 는 X-Forwarded-For 마지막 값(PR #87) |
 | `app/core/body_limit.py` | 요청 본문 크기 상한 — 64KB 넘으면 본문을 읽지 않고 413 (chunked 요청은 읽는 중 차단) |
 | `app/services/auth_service.py` | 가입/로그인 로직, 이메일 중복 검사, access·refresh token 발급·재발급·폐기 |
-| `app/services/ai_service.py` | 컨텍스트 구성, httpx Codyssey AI API 호출, 타임아웃·예외 → 504/502 |
-| `app/services/admin_service.py` | 통계, 사용자 목록, 사용자별 대화, 실패 기록, 요청 흐름 |
+| `app/services/chat_service.py` | 챗 흐름 — `request_id` 발급, 컨텍스트 조회, AI 호출, 성공·실패 저장, 단계별 로그, 504/502. DB 작업은 `asyncio.to_thread` 로 별도 스레드(PR #98) |
+| `app/services/ai_service.py` | 메시지 구성, httpx Codyssey AI API 호출(전체 30초 상한), 실패 분류(AI_TIMEOUT / AI_CALL_FAILED) |
 | `app/routers/auth.py` | signup / login / refresh / logout / me |
 | `app/routers/chat.py` | `POST /api/chat` |
 | `app/routers/me.py` | `GET /api/me/chats` |
-| `app/routers/admin.py` | `GET /api/admin/*` |
+| `app/routers/admin.py` | `GET /api/admin/*` — 조회만 하므로 서비스 없이 CRUD 를 바로 부른다 |
 | `frontend/src/api/` | axios 인스턴스 + 인터셉터 (Authorization 자동 첨부, `code` 판단, 401 재발급 single-flight, 봉투 없는 응답 처리) |
 | `frontend/src/utils/tokenStorage.ts` | 토큰 읽기·쓰기·삭제 + **변경 구독**. 아무것도 import 하지 않는 끝점 |
 | `frontend/src/hooks/` | `useAccessToken`(토큰 구독) · `useAuth`(인증 상태 소비) · `useField`(입력 값·검증·터치) · `useSubmit`(제출 중 상태·중복 차단, `{ ok, data \| error }` 반환) |
@@ -310,25 +310,27 @@ sequenceDiagram
 sequenceDiagram
     participant B as Browser
     participant R as chat router
-    participant S as ai_service
+    participant S as chat_service
+    participant A as ai_service
     participant C as crud
     participant D as SQLite
     participant G as Codyssey AI API
     B->>R: POST /api/chat {message} + Bearer 토큰
-    R->>R: request_id 발급, log request_received
     R->>R: get_current_user (실패 code:401)
     R->>R: ① 입력 검증 strip → 1~1000자 (실패 code:422)
-    R->>S: ask(user_id, message, request_id)
+    R->>R: 횟수 제한 — 사용자별 1분 10회 (넘으면 log rate_limited, code:429, AI 호출 안 함)
+    R->>S: answer(db, user, message)
+    S->>S: request_id 발급, log request_received
     S->>C: ② recent_success_for_context(user_id, AI_CONTEXT_TURNS)
     C->>D: SELECT ... WHERE status='success' ORDER BY id DESC LIMIT 5
-    S->>S: messages = [최근 Q/A ...(오래된 순)] + [현재 질문]
-    S->>S: log ai_call_start
-    S->>G: ③ await client.post(...) — 전체 30초 상한
+    S->>S: messages = [최근 Q/A ...(오래된 순)] + [현재 질문], log ai_call_start
+    S->>A: ask(messages)
+    A->>G: ③ await client.post(...) — asyncio.wait_for 로 전체 30초 상한
     alt 성공
-        G-->>S: 응답 텍스트
+        G-->>A: 응답 텍스트
         S->>S: log ai_call_success latency_ms
         S->>C: ④ chat_log.create(status="success", answer, latency_ms, request_id)
-        R-->>B: code:200 {chat_id, question, answer, created_at}
+        R-->>B: code:200 {chat_id(UUID), question, answer, created_at}
     else 30초 초과 (TimeoutError / httpx.TimeoutException)
         S->>S: log ai_call_failed reason=timeout
         S->>C: ④ chat_log.create(status="error", error_code="AI_TIMEOUT")
@@ -338,7 +340,7 @@ sequenceDiagram
         S->>C: ④ chat_log.create(status="error", error_code="AI_CALL_FAILED")
         R-->>B: code:502 {message}
     end
-    Note over S,D: ④ 저장 성공 → log db_save_success / 실패 → rollback, log db_save_failed (응답은 유지)
+    Note over S,D: ②·④·서버 로그 저장은 asyncio.to_thread 로 별도 스레드에서 실행. ④ 저장 성공 → log db_save_success / 실패 → rollback, log db_save_failed. 성공 답변을 저장하지 못하면 code:500 (저장 안 된 답은 보여 주지 않음)
 ```
 
 **설계 포인트**
@@ -349,12 +351,15 @@ sequenceDiagram
 | 서버 검증 | 프론트 검증과 **별개로 필수** | API 를 직접 호출하면 프론트 검증을 우회할 수 있음 ([features.md](features.md) B11) |
 | 컨텍스트 | 같은 사용자 최근 `AI_CONTEXT_TURNS`(5) **성공** Q/A | 토큰 비용 상한 고정, 실패 기록은 문맥에 의미 없음 |
 | 컨텍스트 초과 | **오래된 것부터 잘라냄** | 최근 맥락 우선 유지 |
-| 타임아웃 | 호출 전체를 `asyncio.timeout(AI_TIMEOUT_SECONDS)`(30초)로 감싸고 httpx 타임아웃도 설정 | httpx 타임아웃은 연결·읽기 **단계별**로 적용되므로 전체 대기 상한을 따로 둔다 |
+| 횟수 제한 | 사용자별 1분 10회, 넘으면 AI 를 부르지 않고 429 | 한 사용자가 AI 비용을 쓰고 서버를 느리게 만드는 것 방지 ([12-decisions.md](12-decisions.md) 22) |
+| 타임아웃 | 호출 전체를 `asyncio.wait_for(…, AI_TIMEOUT_SECONDS)`(30초)로 감싸고 httpx 타임아웃도 설정 | httpx 타임아웃은 연결·읽기 **단계별**로 적용되므로 전체 대기 상한을 따로 둔다 |
 | 예외 변환 | `TimeoutException`→504, 나머지→502 | 사용자에게는 두 코드만 노출, 상세 원인은 로그 `reason=` 으로 |
 | 실패 저장 | AI 실패도 `chat_logs` 에 `status=error` 로 저장 | 관리자 "AI 실패 기록"·통계 |
 | 서버 유지 | 예외를 잡아 봉투 응답으로 변환 | **AI 실패로 서버가 종료되면 안 됨** (mission 4-5절) |
 | 재시도 | **서버 자동 재시도 없음.** 실패를 즉시 안내하고 사용자가 [다시 시도] 버튼으로 재요청 | 쿼터 중복 소모·대기시간 누적 방지, 사용자가 상황을 알고 선택 ([12-decisions.md](12-decisions.md)) |
 | 비동기 | `httpx.AsyncClient` + `await` | 대기 중 다른 요청 처리 |
+| DB 작업 | 대화 기록 조회·대화 저장·서버 로그 저장을 `asyncio.to_thread` 로 별도 스레드에서 | 동기 DB 코드를 이벤트 루프에서 바로 부르면 SQLite 쓰기 잠금을 기다리는 동안 서버 전체가 멈춘다 (#97·PR #98, [12-decisions.md](12-decisions.md) 21) |
+| 응답 번호 | `chat_id` 는 대화 `public_id`(UUID) | 순차 번호는 서비스 전체 대화 수·이용량을 드러낸다 (#106·PR #107) |
 | 로그 내용 | 질문 **원문 미기록**, 길이/식별자만 | 로그 파일·`server_logs` 개인정보 노출 방지 |
 
 ### 5-5. 내 로그 조회 `GET /api/me/chats`
@@ -368,14 +373,15 @@ sequenceDiagram
 sequenceDiagram
     participant B as Browser (관리자)
     participant R as admin router
-    participant S as admin_service
+    participant C as crud
     participant D as SQLite
     B->>R: GET /api/admin/users/12/chats + Bearer
     R->>R: require_admin (401 / 403 + log admin_forbidden)
     R->>R: log admin_access admin_id path
-    R->>S: user_chats(12, limit, offset)
-    S->>D: users 조회 (없으면 code:404)
-    S->>D: chat_logs WHERE user_id=12 (성공·실패 모두)
+    R->>C: user.get(12)
+    C->>D: users 조회 (없으면 code:404)
+    R->>C: chat_log.count/list_for_user(12, limit, offset)
+    C->>D: chat_logs WHERE user_id=12 (성공·실패 모두)
     R-->>B: code:200 {user, total, items}
     B->>R: GET /api/admin/requests/{request_id}/logs
     R->>D: server_logs WHERE request_id ORDER BY id
@@ -406,7 +412,7 @@ sequenceDiagram
 
 1. 사용자가 브라우저에서 Railway 프론트 도메인에 접속 → React 화면 로드
 2. 질문 입력 → axios 가 **백엔드 도메인**으로 `POST /api/chat` 호출 (`Authorization: Bearer <token>`, CORS preflight)
-3. FastAPI 가 `request_id` 발급, 인증 dependency 로 사용자 확인
+3. FastAPI 가 인증 dependency 로 사용자 확인 → 입력 검증 → 횟수 제한 → `request_id` 발급
 4. 서비스 계층이 CRUD 를 통해 해당 사용자의 최근 성공 대화 N개 조회
 5. httpx 로 Codyssey AI API 호출 (타임아웃 설정)
 6. 결과(성공·실패)를 `chat_logs` 에, 각 단계 이벤트를 로그와 `server_logs` 에 저장

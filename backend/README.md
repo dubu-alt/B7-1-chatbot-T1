@@ -4,7 +4,7 @@
 > 기준 문서: [docs/02-architecture.md](../docs/02-architecture.md) · [docs/09-team.md](../docs/09-team.md) · [docs/11-open-issues.md](../docs/11-open-issues.md)
 > 2026-09-23 박성현 팀 이탈 → **백엔드 전체를 성원모가 담당** (AI 파이프라인·관리자 API 인수, docs/11-open-issues C10)
 > 아래 🟦·🟩 는 담당자가 아니라 **작업 영역** 구분이다 (둘 다 성원모)
-> 진행 상태 기준: **2026-10-10 develop** (`pytest -q` 83건 통과 — 인증 30 · 내 로그 4 · 챗 23 · 서버 로그 4 · 관리자 11 · 앱 설정 11)
+> 진행 상태 기준: **2026-10-14 main** (`pytest -q` 87건 통과 — 인증 33 · 내 로그 4 · 챗 24 · 서버 로그 4 · 관리자 11 · 앱 설정 11)
 > 백엔드 API 는 명세의 전 항목(인증 · 챗 · 내 대화 로그 · 관리자 5종 · 서버 로그)이 develop 에 머지됐고, Railway 배포·외부망 확인도 끝났다. 남은 일은 보안 점검 문서의 백엔드 항목([8. 남은 작업](#8-남은-작업))
 
 ## 범례
@@ -30,27 +30,28 @@
 backend/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py                  🟨 앱 진입점 — CORS · 예외 핸들러 · 라우터 등록 · lifespan
+│   ├── main.py                  🟨 앱 진입점 — CORS · 본문 크기 상한 · 예외 핸들러 · 라우터 등록 · API 문서 켜기/끄기(ENABLE_DOCS)
+│   │                               lifespan: 서명 키 검사 → 테이블 생성 · public_id 추가 → 관리자 시드 → 만료 토큰 정리
 │   ├── config.py                🟦 환경변수 로딩 (pydantic-settings)
-│   ├── database.py              🟦 엔진 · 세션 · Base · get_db (SQLite 파일 DB 는 연결 풀 없이 NullPool)
+│   ├── database.py              🟦 엔진 · 세션 · Base · get_db (SQLite 파일 DB 는 연결 풀 없이 NullPool) · add_public_id(기존 DB 에 UUID 컬럼 추가)
 │   │
 │   ├── core/                    ── 공통 기반
 │   │   ├── responses.py         🟦 공통 응답 {code, data} · AppError · 예외 → 봉투 변환
 │   │   ├── timeutil.py          🟦 UTC 저장 / +09:00 응답 변환
-│   │   ├── security.py          🟦 bcrypt · JWT 발급/검증 · refresh token 해시
-│   │   ├── dependencies.py      🟦 get_current_user(401) · require_admin(403, 🟩 감사 로그 admin_access / admin_forbidden)
+│   │   ├── security.py          🟦 bcrypt · JWT 발급/검증(sub = 사용자 public_id) · refresh token 해시
+│   │   ├── dependencies.py      🟦 get_current_user(401, 토큰의 public_id 로 사용자 조회) · require_admin(403, 🟩 감사 로그 admin_access / admin_forbidden)
 │   │   ├── body_limit.py        🟦 요청 본문 크기 상한(413) — 64KB 넘으면 읽지 않고 거절
 │   │   ├── rate_limit.py        🟦 요청 횟수 제한(429) — 챗 사용자별 · 로그인 실패 이메일/IP 별 · 가입 IP 별, 실제 IP 읽기
 │   │   └── logging.py           🟩 이벤트 로그 — 콘솔 · 파일(logs/app.log) · server_logs 동시 기록 · request_id 발급
 │   │
 │   ├── models/                  ── 테이블 정의 (SQLAlchemy)
-│   │   ├── user.py              🟦 users
-│   │   ├── chat_log.py          🟦 chat_logs
+│   │   ├── user.py              🟦 users (외부에 보이는 번호는 public_id UUID)
+│   │   ├── chat_log.py          🟦 chat_logs (외부에 보이는 번호는 public_id UUID)
 │   │   ├── server_log.py        🟦 server_logs
 │   │   └── refresh_token.py     🟦 refresh_tokens
 │   │
 │   ├── crud/                    ── DB 질의 전담 (라우터는 DB 직접 접근 금지)
-│   │   ├── user.py              🟦 get · get_by_email · create   + 🟩 관리자: count · list_with_stats
+│   │   ├── user.py              🟦 get · get_by_public_id · get_by_email · create   + 🟩 관리자: count · list_with_stats
 │   │   ├── chat_log.py          🟦 create · recent_success_for_context · 내 로그 count/list
 │   │   │                           + 🟩 관리자: stats · count/list_for_user · count/list_failures
 │   │   ├── refresh_token.py     🟦 create · get_valid · delete · delete_all_for_user · delete_expired
@@ -62,7 +63,7 @@ backend/
 │   │
 │   ├── services/                ── 비즈니스 로직
 │   │   ├── auth_service.py      🟦 가입 · 로그인 · 재발급(회전) · 로그아웃 · 관리자 시드(1명 유지 · 비밀번호 동기화) · 만료 토큰 정리
-│   │   ├── chat_service.py      🟩 챗 흐름 — 컨텍스트 구성 · AI 호출 · 성공/실패 저장 · 504 / 502
+│   │   ├── chat_service.py      🟩 챗 흐름 — 컨텍스트 구성 · AI 호출 · 성공/실패 저장 · 504 / 502 (DB 작업은 asyncio.to_thread 로 별도 스레드)
 │   │   └── ai_service.py        🟩 Codyssey AI 호출 · 전체 30초 상한 · 실패 분류(AI_TIMEOUT / AI_CALL_FAILED)
 │   │
 │   └── routers/                 ── HTTP 엔드포인트
@@ -76,10 +77,11 @@ backend/
 │
 ├── tests/
 │   ├── conftest.py              🟦 임시 DB · TestClient · 헬퍼
-│   ├── test_auth.py             🟦 인증 19개
+│   ├── test_auth.py             🟦 인증 33개 (요청 횟수 제한 · 관리자 시드 · public_id 포함)
 │   ├── test_me_chats.py         🟦 내 로그 4개
-│   ├── test_chat.py             🟩 챗 API 21개 + 서버 로그 4개 (가짜 AI 서버로 대체)
-│   └── test_admin.py            🟩 관리자 API·감사 로그 11개
+│   ├── test_chat.py             🟩 챗 API 24개 + 서버 로그 4개 (가짜 AI 서버로 대체)
+│   ├── test_admin.py            🟩 관리자 API·감사 로그 11개
+│   └── test_app.py              🟦 앱 설정 11개 (API 문서 켜기/끄기 · 본문 크기 상한 · 서명 키 검사)
 │
 ├── requirements.txt             🟨 런타임 의존성
 ├── requirements-dev.txt         🟦 pytest
@@ -105,7 +107,9 @@ backend/
 | 요청 횟수 제한 | `core/rate_limit.py`, `routers/auth.py`, `routers/chat.py`, `config.py` — 챗 사용자별 1분 10회 · 로그인 실패 이메일별 10분 5회/IP 별 20회 · 가입 IP 별 10분 20회 → 429 | #86 · PR #87 | ✅ |
 | API 문서 노출 | `config.py`, `main.py`, `tests/test_app.py` — `ENABLE_DOCS=true` 일 때만 `/docs` · `/redoc` · `/openapi.json` 을 연다(기본 꺼짐, 운영 404) | #90 · PR #91 | ✅ |
 | 요청 본문 크기 | `core/body_limit.py`, `main.py`, `schemas/auth.py`, `tests/test_app.py` — 본문 64KB 넘으면 읽지 않고 413, 비밀번호 최대 128자(가입·로그인 422) | #92 · PR #93 | ✅ |
-| 서명 키 강도 | `main.py`, `tests/test_app.py` — `JWT_SECRET_KEY` 가 비었거나 32바이트 미만이면 서버 시작 거부 | #이슈번호 · PR #번호 | ✅ |
+| 서명 키 강도 | `main.py`, `tests/test_app.py` — `JWT_SECRET_KEY` 가 비었거나 32바이트 미만이면 서버 시작 거부 | #94 · PR #95 | ✅ |
+| 사용자 번호 비노출 | `models/user.py`, `database.py`, `core/security.py`, `core/dependencies.py`, `crud/user.py`, `routers/auth.py` — `users.public_id`(UUID) 추가, JWT `sub` 에 정수 id 대신 public_id, 회원가입·내 정보 응답에서 `id` 제거. 기존 DB 는 서버 시작 시 컬럼 추가 → 빈 행 채우기 → UNIQUE INDEX | #99 · PR #101 | ✅ |
+| 대화 번호 비노출 | `models/chat_log.py`, `database.py`, `routers/chat.py`, `routers/me.py` — `chat_logs.public_id`(UUID) 추가, 질문 전송·내 대화 로그의 `chat_id` 를 public_id 로. 관리자 API·서버 로그·내부 PK/FK 는 정수 id 그대로 | #106 · PR #107 | ✅ |
 | 내 로그 | `routers/me.py`, `tests/test_me_chats.py` | #58 · PR #59 | ✅ |
 | 배포 | Railway 서비스 설정, Volume `/data`, Variables(`DATABASE_URL=sqlite:////data/app.db` · `LOG_FILE=/data/logs/app.log` 등). 공개 도메인 · `CORS_ORIGINS` 등록 · 외부망(HTTPS · 휴대폰 LTE) · 재배포 후 데이터 유지 확인(2026-10-06~07, docs/07-verification L4) | #63 | ✅ |
 | 문서 | 루트 README 총괄 | `docs/*` | ✅ |
@@ -118,6 +122,7 @@ backend/
 | 챗 API | `routers/chat.py`, `schemas/chat.py`, `services/chat_service.py` — `POST /api/chat`, 입력 검증 422 | ✅ #61 · PR #62 |
 | 컨텍스트 | 최근 성공 Q/A 5개 (`AI_CONTEXT_TURNS`) | ✅ #61 · PR #62 |
 | 실패 처리 | 타임아웃 504 · 호출 실패 502, 실패도 `chat_logs` 저장, 자동 재시도 없음 | ✅ #61 · PR #62 |
+| 이벤트 루프 멈춤 수정 | `services/chat_service.py`, `routers/chat.py` — 대화 기록 조회 · 대화 저장 · 서버 로그 저장을 `asyncio.to_thread` 로 실행. 회귀 테스트: DB 쓰기 잠금을 2초 잡은 동안 이벤트 루프가 0.5초 넘게 멈추지 않는지 | ✅ #97 · PR #98 |
 | 로깅 | `core/logging.py` — 챗 요청의 단계별 이벤트(요청 수신 · AI 호출 시작 · AI 성공/실패 · DB 저장 성공/실패)를 콘솔 · `logs/app.log` · `server_logs` 에 같은 `request_id` 로 기록 | ✅ #64 · PR #65 |
 | PoC 정리 | `backend/main.py` → `routers/chat.py` 이관 후 삭제, `requests` 제거 | ✅ #61 · PR #62 |
 | 관리자 API | `routers/admin.py` — `GET /api/admin/stats` · `/users` · `/users/{id}/chats` · `/failures` · `/requests/{request_id}/logs`. 조회만 하므로 서비스·스키마 파일 없이 라우터 → CRUD 로 바로 연결 (내 대화 로그 API 와 같은 구조) | ✅ #66 · PR #67 |
@@ -163,13 +168,13 @@ AI·관리자 영역(🟩)이 인증·DB 영역(🟦)에서 가져다 쓰는 것
 |------|-----------|-----------|
 | 로그인 필수 처리 | `user: User = Depends(get_current_user)` → `user.id` 만 사용 | `core/dependencies.py` |
 | DB 세션 | `db: Session = Depends(get_db)` | `database.py` |
-| 성공 응답 | `return ok({"chat_id": …, "question": …, "answer": …, "created_at": …})` | `core/responses.py` |
+| 성공 응답 | `return ok({"chat_id": log.public_id, "question": …, "answer": …, "created_at": …})` — 일반 사용자에게는 정수 id 대신 UUID | `core/responses.py` |
 | 실패 응답 | `raise AppError(504, "현재 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요.")` · `raise AppError(502, "…")` | `core/responses.py` |
 | 입력 검증 메시지 | 스키마 validator 에서 `raise ValueError("질문은 1~1000자로 입력해 주세요.")` → 자동 422 | `core/responses.py` |
 | 컨텍스트 조회 | `crud.chat_log.recent_success_for_context(db, user.id, settings.ai_context_turns)` — **오래된 순**으로 반환 | `crud/chat_log.py` |
 | 대화 저장 | `crud.chat_log.create(db, user_id=…, question=…, answer=…, status="success"/"error", error_code=…, latency_ms=…, request_id=…)` | `crud/chat_log.py` |
 | 요청 추적 ID | `request_id = new_request_id()` — 12자리, chat_logs·server_logs 를 잇는 열쇠 | `core/logging.py` |
-| 서버 로그 저장 | `log_event(request_id, "ai_call_start", user_id=user.id, context_turns=2)` → 콘솔 · 파일 · `server_logs` 에 한 번에 기록 (DB 저장은 내부에서 `crud.server_log.create`) | `core/logging.py` |
+| 서버 로그 저장 | `await asyncio.to_thread(log_event, request_id, "ai_call_start", user_id=user.id, context_turns=2)` → 콘솔 · 파일 · `server_logs` 에 한 번에 기록 (DB 저장은 내부에서 `crud.server_log.create`). `async def` 안에서는 DB 작업을 이렇게 별도 스레드로 부른다 | `core/logging.py` |
 | 설정값 | `settings.copa_api_key` · `ai_timeout_seconds` · `ai_context_turns` · `max_message_length` | `config.py` |
 | 응답 시각 형식 | `to_kst_iso(log.created_at)` | `core/timeutil.py` |
 | 관리자 권한 | `admin: User = Depends(require_admin)` → 비로그인 401 · 일반 사용자 403 | `core/dependencies.py` |
@@ -213,15 +218,16 @@ request_received → ai_call_start → ai_call_success / ai_call_failed(reason=�
 ## 6. API 목록
 
 모든 응답은 HTTP 200 + `{code, data}` 이고, 결과는 `code` 로 구분한다. 실패하면 `data.message` 에 안내 문구가 들어간다.
+어느 API 든 본문이 64KB 를 넘으면 `413`. 일반 사용자 응답에는 순차 DB 번호를 넣지 않는다(`chat_id` 는 UUID, 회원가입·내 정보 응답에는 `id` 없음).
 
 | Method · 경로 | 로그인 | 설명 | 주요 실패 code |
 |---|:-:|---|---|
-| `POST /api/auth/signup` | | 회원가입 (성공 201) | 409 이메일 중복 · 422 입력 오류 |
-| `POST /api/auth/login` | | access token(15분) · refresh token(1일) 발급 | 401 |
+| `POST /api/auth/signup` | | 회원가입 (성공 201) | 409 이메일 중복 · 422 입력 오류 · 429 IP 별 10분 20회 초과 |
+| `POST /api/auth/login` | | access token(15분) · refresh token(1일) 발급 | 401 · 429 실패가 이메일별 10분 5회 / IP 별 20회 초과 |
 | `POST /api/auth/refresh` | | refresh token 으로 재발급 (기존 refresh token 은 폐기) | 401 |
 | `POST /api/auth/logout` | | refresh token 폐기 | — |
 | `GET /api/auth/me` | ✅ | 내 정보 · 권한(role) | 401 |
-| `POST /api/chat` | ✅ | 질문 → AI 답변 (최근 성공 대화 5개를 함께 보냄) | 422 · 504 AI 지연 · 502 AI 실패 · 500 저장 실패 |
+| `POST /api/chat` | ✅ | 질문 → AI 답변 (최근 성공 대화 5개를 함께 보냄) | 422 · 429 1분 10회 초과 · 504 AI 지연 · 502 AI 실패 · 500 저장 실패 |
 | `GET /api/me/chats` | ✅ | 내 대화 로그 (성공만, 최신순) | 401 |
 | `GET /api/admin/stats` | 관리자 | 사용자 수 · 대화 수 · 실패 종류별 건수 · 성공 평균 응답시간 | 401 · 403 |
 | `GET /api/admin/users?q=` | 관리자 | 사용자 목록 · 이메일 검색 (최근 활동 순) | 401 · 403 |
@@ -251,6 +257,12 @@ request_received → ai_call_start → ai_call_success / ai_call_failed(reason=�
 | Railway 에서 `LOG_FILE=/data/logs/app.log` | 컨테이너 안의 파일은 재배포·재시작 때 사라지므로 DB 와 같은 Volume 에 저장 |
 | SQLite 파일 DB 는 연결 풀 없이(NullPool) | 기본 풀은 연결을 15개까지만 만든다. 챗 요청은 AI 를 기다리는 동안 연결을 잡고 있어 동시 15건이면 풀이 바닥나 서버 전체가 멈췄다. SQLite 는 파일을 여는 것이라 연결 비용이 작다 |
 | 요청 횟수 제한은 메모리 카운터 | 서버가 하나라 Redis 같은 외부 저장소가 필요 없다. 대가는 재시작하면 횟수 초기화. IP 별 로그인 실패 한도를 이메일별(5회)보다 넉넉한 20회로 둔 것은 교육장처럼 여러 사람이 같은 공인 IP 를 쓰기 때문 |
+| 챗 API 의 DB 작업은 `asyncio.to_thread` 로 별도 스레드에서 | `async def` 안에서 동기 DB 코드를 그대로 부르면, SQLite 쓰기 잠금을 기다리는 동안(최대 5초) 이벤트 루프가 멈춰 다른 사용자 요청까지 모두 멈춘다. 별도 스레드로 보내면 기다리는 동안에도 다른 요청을 처리한다(로컬 측정: 동시 챗 200건에서 가장 오래 멈춘 시간 0.65초 → 0.03초) |
+| 일반 사용자에게는 UUID(`public_id`)만 보여 줌 | 토큰은 브라우저에 저장돼 누구나 디코드할 수 있고, 순차 번호는 가입 순서·전체 가입자 수·전체 대화 수를 드러낸다. 내부 PK·FK·정렬은 정수 id 그대로 두어 DB 구조는 바꾸지 않았고, 관리자 API 는 추적이 목적이라 정수 id 유지 |
+| 기존 DB 는 서버 시작 시 직접 컬럼 추가 (`add_public_id`) | `create_all` 은 이미 있는 테이블에 컬럼을 추가하지 않는다. Railway 의 기존 `app.db` 를 지우지 않고 맞추기 위해, 컬럼이 없으면 추가 → 빈 행마다 UUID 채우기 → UNIQUE INDEX 순서로 실행한다. 몇 번 실행해도 결과가 같다 |
+| 요청 본문 64KB 상한 · 비밀번호 128자 상한 | 본문 크기 제한이 없으면 수 MB 요청도 끝까지 메모리에 올린다. 질문 1000자는 UTF-8 로 약 4KB 라 64KB 면 넉넉하다. 비밀번호는 bcrypt 가 앞 72바이트만 쓰므로 길게 받을 이유가 없다 |
+| API 문서 화면은 `ENABLE_DOCS=true` 일 때만 | 운영에 관리자 API 를 포함한 전체 API 목록이 공개되지 않게. 명세는 `docs/03-api.md` 로 제출한다 |
+| 서명 키가 32바이트 미만이면 서버 시작 거부 | 32바이트(256비트)는 HS256 의 해시 길이와 같아 권장 최소 길이다. 짧은 키는 추측되면 아무 사용자의 토큰이나 위조할 수 있다 |
 | 실제 IP 는 X-Forwarded-For 의 마지막 값 | Railway 는 실제 접속 IP 를 헤더 끝에 덧붙이고 앞쪽 값은 사용자가 꾸밀 수 있다. uvicorn `--forwarded-allow-ips="*"` 는 맨 앞 값을 써서 IP 제한을 피할 수 있으므로 쓰지 않는다 (`TRUST_FORWARDED_FOR=true`) |
 | 관리자 시드가 매 시작마다 계정을 환경변수와 맞춤 | 관리자를 바꿔도 이전 관리자가 남거나, 먼저 가입해 둔 사람의 비밀번호로 관리자가 되거나, 비밀번호 교체가 반영되지 않는 문제를 막기 위해. 시드를 건너뛰는 설정(값 없음)에서는 강등하지 않아 관리자 0명을 막는다 |
 
@@ -262,15 +274,12 @@ request_received → ai_call_start → ai_call_success / ai_call_failed(reason=�
 
 | 작업 | 내용 |
 |------|------|
-| 입력·설정 검증 | bcrypt 비용 코드에 명시(S10) · 비표시 문자 거부(S14) |
-| 보안 응답 헤더 | 백엔드 응답에 보안 헤더 5종 (S07, 프론트는 완료) |
-| `backend/.env.example` | 값이 비어 있는 키 목록 파일 추가 (실제 값은 커밋 금지) |
+| 비밀번호 해시 비용 명시 (S10) | `bcrypt.gensalt(rounds=12)` 처럼 비용을 코드에 상수로 두고, 해시가 `$2b$12$` 로 시작하는지 테스트 |
+| 비표시 문자 거부 (S14) | 질문·닉네임에서 제로폭 공백·제어 문자만 있는 입력을 422 로 거절 |
+| 보안 응답 헤더 (S07) | 백엔드 응답에 보안 헤더 5종 (프론트는 완료) |
+| 평가 직전 재점검 | 의존성 취약점 점검(S08) 재실행, 요청 횟수 제한 재측정(P15·P16) |
 
-------|------|
-| 배포 마무리 | 백엔드 공개 도메인 생성 → 프론트 Variables `VITE_API_BASE_URL` · 백엔드 `CORS_ORIGINS` 에 실제 주소 등록 → 외부망에서 가입 · 질문 · 내 대화 로그 · 관리자 화면 전체 흐름 확인 |
-| 프론트 실서버 연결 | **아직 안 함.** 백엔드는 pytest 와 Swagger 로만 확인했다. 챗 · 내 대화 로그 · 관리자 화면을 MSW 없이 백엔드에 연결해 확인 (프론트 담당과 함께) |
-| `backend/.env.example` | 값이 비어 있는 키 목록 파일 추가 (실제 값은 커밋 금지) |
-| 루트 README | 프로젝트 개요 · 실행 방법 · 환경변수 목록 · 팀 역할 정리 |
+> 백엔드 `.env` 예시 파일은 두지 않는다(팀 결정). 키 목록은 docs/06-deployment 3절이 기준이다.
 
 ---
 
@@ -283,10 +292,10 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 # backend/.env 작성 — 키 목록: docs/06-deployment.md
-#   필수: JWT_SECRET_KEY · COPA_API_KEY
+#   필수: JWT_SECRET_KEY(32바이트 이상, 짧으면 서버가 시작하지 않음) · COPA_API_KEY
 #   관리자 계정: ADMIN_EMAIL · ADMIN_PASSWORD(8자 이상) · ADMIN_NICKNAME → 서버 시작 시 자동 생성
 uvicorn app.main:app --reload        # Swagger: http://localhost:8000/docs (backend/.env 에 ENABLE_DOCS=true 일 때)
-python -m pytest -q                  # 자동 테스트 83건
+python -m pytest -q                  # 자동 테스트 87건
 ```
 
 > `.env` 에 같은 키가 여러 줄 있으면 **아래쪽 값**이 적용된다. 헷갈리지 않게 키마다 한 줄만 둔다.
@@ -326,7 +335,8 @@ sqlite3 app.db < scripts/check_logs.sql      # 사용자별 대화 수 · 최근
 ### 9-5. 로컬 테스트 계정 비밀번호를 잊었을 때
 
 비밀번호는 원래 값으로 되돌릴 수 없는 bcrypt 해시로 저장돼 관리자도 볼 수 없고, 비밀번호 찾기 기능은 없다.
-새로 가입하거나, 로컬 DB 에서만 아래처럼 새 비밀번호로 덮어쓴다 (관리자 계정도 같음 — 서버 시작 시 시드는 이미 있는 계정의 비밀번호를 바꾸지 않는다).
+새로 가입하거나, 로컬 DB 에서만 아래처럼 새 비밀번호로 덮어쓴다.
+관리자 계정은 이 방법이 필요 없다 — 서버를 다시 시작하면 관리자 시드가 비밀번호를 `.env` 의 `ADMIN_PASSWORD` 로 맞추므로(#84) 그 값으로 로그인하면 된다.
 
 ```bash
 python -c "

@@ -218,6 +218,11 @@ Railway Project
 | `DATABASE_URL` | `sqlite:////data/app.db` |
 | `LOG_FILE` | `/data/logs/app.log` (로그 파일도 Volume 에 저장 — 재배포해도 유지) |
 | `CORS_ORIGINS` | `https://<frontend>.up.railway.app` |
+| `TRUST_FORWARDED_FOR` | `true` (요청 횟수 제한이 프록시 IP 하나로 묶이지 않고 실제 접속 IP 로 세도록) |
+
+`ENABLE_DOCS` 는 넣지 않는다(기본 false → `/docs`·`/redoc`·`/openapi.json` 404).
+
+이미 데이터가 있는 Volume DB 는 서버가 시작할 때 `users`·`chat_logs` 에 `public_id`(UUID) 컬럼을 자동으로 추가하고 기존 행을 채운다(#99·#106). 따로 실행할 마이그레이션 명령은 없다. 이전 형식(정수 `sub`) access 토큰은 401 이 되지만 프론트가 refresh 로 새 토큰을 받아 이어서 쓰므로 사용자가 다시 로그인할 필요는 없다.
 
 ### 6-2. 프론트 서비스
 
@@ -297,7 +302,7 @@ curl -si -X OPTIONS https://<backend>.up.railway.app/api/auth/login \
 ## 9. 민감정보 관리 체크
 
 - `.gitignore` 에 `.env`, `.env.*`(단 `*.example` 은 예외), `*.db`, `__pycache__`, `node_modules`, `.venv`, `dist`
-- 저장소에는 `backend/.env.example`, `frontend/.env.development.example`, `frontend/.env.production.example` 만 (키 이름 수준, 값은 예시)
+- 저장소에는 `frontend/.env.development.example`, `frontend/.env.production.example` 만 (키 이름 수준, 값은 예시). 백엔드는 예시 파일 없이 [3. 환경변수](#3-환경변수)의 키 목록이 기준
 - API 키·JWT 비밀키·관리자 비밀번호는 Railway Variables 에만 입력
 
 ```bash

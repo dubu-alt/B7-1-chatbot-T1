@@ -20,10 +20,10 @@
 
 | ID | 테스트 | 기대 | mission |
 |----|--------|------|---------|
-| V01 | 회원가입 | HTTP 200, `code: 201`, `data` 에 `hashed_password` 없음, role=user | 4-2절 |
+| V01 | 회원가입 | HTTP 200, `code: 201`, `data` 에 `hashed_password`·`id` 없음, role=user | 4-2절 |
 | V02 | 같은 이메일 재가입 | `code: 409` | 4-2절 |
 | V02b | 다른 이메일 + 같은 닉네임 | `code: 201` (닉네임 중복 허용) | 4-2절 |
-| V03 | 비밀번호 7자 / 잘못된 이메일 / 닉네임 21자 | `code: 422`, `data.message` 존재, `detail` 키 없음 | 4-5절 |
+| V03 | 비밀번호 7자·129자 / 잘못된 이메일 / 닉네임 21자 | `code: 422`, `data.message` 존재, `detail` 키 없음 | 4-5절 |
 | V04 | DB 의 `hashed_password` 확인 | bcrypt prefix(`$2b$`), 평문 아님 | 4-2절 |
 | V05 | 로그인 성공 | `code: 200`, `data.access_token`·`refresh_token`·`token_type=bearer`·`expires_in=900`·`refresh_expires_in=86400`, `refresh_tokens` 에 해시 1행(원문 아님) | 4-2절 |
 | V05b | `POST /api/auth/refresh` 유효 토큰 | `code: 200`, 새 토큰 쌍, (회전 시) 이전 refresh 로 재요청하면 `code: 401` | 4-2절 |
@@ -35,7 +35,7 @@
 | V07 | `GET /api/auth/me` 유효 토큰 | `code: 200`, `data: {email, nickname, role}` (id 없음) | 4-2절 |
 | V08 | 토큰 없음 / 변조 / 만료 | `code: 401` | 4-2절 |
 | V09 | 비로그인 `POST /api/chat`, `GET /api/me/chats` | `code: 401` | 4-2절 |
-| V10 | 챗 성공 | `code: 200`, `data: {chat_id, question, answer, created_at}`, `chat_logs` 1건(status=success) | 4-3절, 4-4절 |
+| V10 | 챗 성공 | `code: 200`, `data: {chat_id, question, answer, created_at}` — `chat_id` 는 UUID 이고 내 대화 로그의 같은 대화와 같은 값, `chat_logs` 1건(status=success) | 4-3절, 4-4절 |
 | V11 | 두 번째 질문 | 프롬프트에 직전 Q/A 포함 (AI 클라이언트를 목으로 두고 payload 검사) | 4-3절 |
 | V12 | 7번째 질문 | 컨텍스트가 `AI_CONTEXT_TURNS`(5)턴으로 제한됨, 실패 기록은 제외 | 4-3절 |
 | V13 | 빈 문자열 / 공백만 | `code: 422`, AI 호출 안 됨 | 4-5절 |
@@ -172,7 +172,7 @@ grep ai_call_failed backend/logs/app.log
 
 | 단계 | 상태 | 비고 |
 |------|:----:|------|
-| L1 서버 단위 | ✅ | 2026-10-10 `cd backend && pytest -q` **83건 통과** (`test_auth.py`·`test_me_chats.py`·`test_chat.py`·`test_admin.py`·`test_app.py`). V01~V23(V02b·V05b~V05f 포함)·V30~V38 + 추가 케이스(여러 기기 로그인, 관리자 승격, 사용자별 컨텍스트, 키 미설정 502, `auth_failed`, 평균 응답시간 null, 이메일 검색 `%` 글자 그대로, 최근 활동 순, **동시 챗 요청 시 서버 멈춤 방지 #74**, **관리자 시드 — 이전 관리자 강등·비밀번호 동기화 #85**, **요청 횟수 제한 429 — 챗·로그인 실패·가입·실제 IP #87**, **API 문서 운영에서 끄기 #91**, **요청 본문 64KB 상한 413·비밀번호 128자 #93**, **서명 키 32바이트 미만이면 시작 거부**). AI 호출은 가짜 AI 서버(`httpx.MockTransport`) |
+| L1 서버 단위 | ✅ | 2026-10-14 `cd backend && pytest -q` **87건 통과** (`test_auth.py`·`test_me_chats.py`·`test_chat.py`·`test_admin.py`·`test_app.py`). V01~V23(V02b·V05b~V05f 포함)·V30~V38 + 추가 케이스(여러 기기 로그인, 관리자 승격, 사용자별 컨텍스트, 키 미설정 502, `auth_failed`, 평균 응답시간 null, 이메일 검색 `%` 글자 그대로, 최근 활동 순, **동시 챗 요청 시 서버 멈춤 방지 #74**, **관리자 시드 — 이전 관리자 강등·비밀번호 동기화 #85**, **요청 횟수 제한 429 — 챗·로그인 실패·가입·실제 IP #87**, **API 문서 운영에서 끄기 #91**, **요청 본문 64KB 상한 413·비밀번호 128자 #93**, **서명 키 32바이트 미만이면 시작 거부 #95**, **챗 DB 작업 별도 스레드 — DB 쓰기 잠금 2초 동안 이벤트 루프가 0.5초 넘게 멈추지 않음 #98**, **JWT `sub` 가 UUID·정수 `sub` 토큰 401·가입/내 정보 응답에 `id` 없음 #101**, **`chat_id` UUID·기존 DB 에 `public_id` 추가 #107**). AI 호출은 가짜 AI 서버(`httpx.MockTransport`) |
 | L2 API 흐름 | ✅ | [1-2. L2 — API 흐름 스크립트](#1-2-l2--api-흐름-스크립트)의 curl 단계(가입·로그인·질문·422·401·403·관리자)는 2026-10-08 로컬 백엔드 침투·통합 테스트에서 개별 실행해 확인([13-security-review.md](13-security-review.md) 7절). 2026-10-01 로컬 실서버 Swagger(`/docs`)에서 실제 Codyssey AI 로 가입(201)→중복 가입(409)→로그인→질문(200)→이어 질문(직전 대화 반영)→공백 질문(422)→토큰 없이 요청(401) 수동 확인 (PR #62 스크린샷). 2026-10-06 관리자 계정으로 요약 통계 → 사용자 목록·검색 → 사용자별 대화 → 없는 사용자 404 → 일반 사용자 403 → 감사 로그(`admin_access`·`admin_forbidden`) 수동 확인 (PR #67 스크린샷) |
 | L3 브라우저 | ✅ | 프론트 자동 테스트 **268건** · 수동 확인 168항목 — [frontend/TESTING.md](../frontend/TESTING.md). 인증은 로컬 실서버(G), 내 대화 로그 API 는 로컬 실서버(G-2), **챗·로그·관리자 전체는 배포 서버(R, 2026-10-06~07)** 로 확인. Chrome·Safari·Firefox·Edge, 아이폰 13 mini·안드로이드 실기기 |
 | L4 배포/외부망 | ✅ | 2026-10-06~07 Railway 프론트·백엔드 공개 도메인(HTTPS)에서 A~F 단계 확인 — HTTPS·CORS 허용/차단·401/403·번들 비밀값 없음·휴대폰 LTE 접속·재배포 후 데이터 유지(TESTING R 133~155). 2026-10-08 보안 헤더·침투 테스트 배포 6건([13-security-review.md](13-security-review.md) 7절) |

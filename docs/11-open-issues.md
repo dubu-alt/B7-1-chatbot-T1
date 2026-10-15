@@ -1,6 +1,6 @@
 # 11. 미확정 · 문서 불일치 목록 (팀 논의용)
 
-> 최초 작성 2026-09-14, 갱신 2026-09-15, 2026-10-01(백엔드 구현 반영 — D7·E9·E10·E11·E12·E17·E18 해결). mission.md 와 docs/01~10, features.md, handoff.md, 현재 코드(develop)를 대조한 결과다.
+> 최초 작성 2026-09-14, 갱신 2026-09-15, 2026-10-01(백엔드 구현 반영 — D7·E9·E10·E11·E12·E17·E18 해결), 2026-10-14(요청 횟수 제한·내부 번호 비노출 결정 추가, E8 재확인). mission.md 와 docs/01~10, features.md, handoff.md, 현재 코드(develop)를 대조한 결과다.
 > 논의로 결정되면 해당 행의 **결정** 칸을 채우고, 관련 문서를 수정한 뒤 [0. 확정되어 문서에 반영한 것](#0-확정되어-문서에-반영한-것)로 옮긴다.
 > 결정 이유는 [12-decisions.md](12-decisions.md). mission.md 요구사항 자체를 누락·위반한 항목은 발견되지 않았다.
 
@@ -48,6 +48,8 @@
 | **A15 토큰 저장 위치** | **`localStorage`** (access·refresh 같은 곳, refresh 는 body 전송). XSS 위험은 저장 방식이 아니라 **XSS 예방 + 피해 시간 단축**으로 대응 ([12-decisions.md 4. 토큰을 프론트에 저장하는 위치 — 위험성과 대안](12-decisions.md#4-토큰을-프론트에-저장하는-위치--위험성과-대안)) | [03-api.md 0. 공통 규약](03-api.md#0-공통-규약)·[7. 합의된 값](03-api.md#7-합의된-값), 05 화면 2, [12-decisions.md 4. 토큰을 프론트에 저장하는 위치 — 위험성과 대안](12-decisions.md#4-토큰을-프론트에-저장하는-위치--위험성과-대안), [02-architecture.md 4. 인증 방식 결정: JWT vs 서버 측 세션](02-architecture.md#4-인증-방식-결정-jwt-vs-서버-측-세션) |
 | **프론트 언어** | **TypeScript (`strict: true`)** — 기존 JS(JSX) 에서 전환. 봉투 응답·결과 코드·관리자 응답 타입 고정 | [02-architecture.md 1. 기술 스택](02-architecture.md#1-기술-스택), 05 머리말, [06-deployment.md 2. 설치](06-deployment.md#2-설치)·[6-2. 프론트 서비스](06-deployment.md#6-2-프론트-서비스), [09-team.md 3. 역할 분담](09-team.md#3-역할-분담), [features.md 0. 구조 결정 근거](features.md#0-구조-결정-근거)·F1, [12-decisions.md 14. 프론트엔드 TypeScript (strict)](12-decisions.md#14-프론트엔드-typescript-strict) |
 | E3·E4·E5·E6 | 상태 표시·캡처 목록·슬립 모순 정리 | 07, 08 |
+| 요청 횟수 제한 | 챗 사용자별 1분 10회, 로그인 실패 이메일별 10분 5회·IP 별 20회, 가입 IP 별 10분 20회 → `code: 429` (#86·PR #87) | [03-api.md](03-api.md), [06-deployment.md 3. 환경변수](06-deployment.md#3-환경변수), [12-decisions.md](12-decisions.md) 22 |
+| 내부 번호 비노출 | 일반 사용자에게 나가는 번호(JWT `sub`·`chat_id`)는 UUID `public_id`, 회원가입·내 정보 응답에 `id` 없음. 관리자 API 는 정수 id 유지 (#99·PR #101, #106·PR #107) | [03-api.md](03-api.md), [04-database.md](04-database.md), [12-decisions.md](12-decisions.md) 23, [13-security-review.md](13-security-review.md) L07 |
 
 ---
 
@@ -106,7 +108,7 @@
 | # | 문제 | 위치 |
 |---|------|------|
 | E7 | **해결** — README 저장소 링크·서비스 URL 은 루트 README 맨 위에 기입 | 루트 README (D3) — backend/README 는 백엔드 안내라 저장소 링크 불필요 |
-| E8 | **해결** — `backend/README.md` 는 JWT·Codyssey·Railway 기준으로 갱신됨(2026-10-08 확인). 남은 옛 내용은 `main` 의 루트 README(D3) | `backend/README.md` (D3 과 함께 처리) |
+| E8 | **해결** — `backend/README.md` 는 JWT·Codyssey·Railway 기준으로 갱신됨(2026-10-08 확인, 2026-10-14 테스트 수·PR 번호·public_id·별도 스레드 반영). 남은 옛 내용은 `main` 의 루트 README(D3) | `backend/README.md` (D3 과 함께 처리) |
 | E9 | **해결** — `requirements.txt` 에 `python-dotenv` 포함, 2026-10-01 Railway 백엔드 기동 확인. (기록: `python-dotenv` 를 import 하지만 `requirements.txt` 에 없어 2026-09-14 Railway 백엔드가 `ModuleNotFoundError: No module named 'dotenv'` 로 기동 실패) | `backend/main.py:3` / `backend/requirements.txt` |
 | E10 | **해결** — `requirements.txt` 가 문서 구성(fastapi·uvicorn·sqlalchemy·pydantic·pydantic-settings·python-dotenv·bcrypt·pyjwt·httpx)과 일치, `requests` 제거 (#10·PR #15, PR #62) | `backend/requirements.txt` / [06-deployment.md 2. 설치](06-deployment.md#2-설치) |
 | E11 | **해결** — `POST /api/chat` 구현(인증·입력 검증·호출 전체 30초 상한·504/502·성공/실패 DB 저장·봉투 응답, httpx 비동기), 골격 `backend/main.py` 삭제 (#61·PR #62). 단계별 서버 로그는 B13 에서 진행 | `backend/main.py` |
